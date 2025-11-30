@@ -19,6 +19,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
+using System.IO;
 using HelixToolkit.Wpf.SharpDX;
 using HelixToolkit.Wpf.SharpDX.Core;
 using SharpDX;
@@ -100,16 +101,7 @@ namespace PointCloudViz_Final
             }
             
            
-            Loaded += (_, __) => 
-            {
-                Logger.Info("MainWindow ???");
-                if (_cloud != null)
-                {
-                    UpdatePointCloudGPU(_cloud, resetCamera: true);
-                    PromptVoxelDownsampleIfLarge();
-                }
-                ShowNotification(StatusText.Text);
-            };
+            Loaded += MainWindow_Loaded;
             // 注意：Helix Toolkit 的 Viewport3DX 已经内置了鼠标和键盘交互
 
             // 测量工具事件
@@ -166,25 +158,6 @@ namespace PointCloudViz_Final
             // 确保滚轮事件能被捕获
             this.AddHandler(MouseWheelEvent, new MouseWheelEventHandler(Window_MouseWheel), true);
             
-            // 监控相机属性变化，同步到我们的变量
-            Loaded += (s, e) =>
-            {
-                if (HelixCamera != null)
-                {
-                    System.Windows.Media.CompositionTarget.Rendering += SyncCameraState;
-                }
-                if (StatusText != null)
-                {
-                    DependencyPropertyDescriptor.FromProperty(
-                        System.Windows.Controls.TextBlock.TextProperty,
-                        typeof(System.Windows.Controls.TextBlock))
-                        .AddValueChanged(StatusText, (_, __) =>
-                        {
-                            ShowNotification(StatusText.Text);
-                        });
-                }
-            };
-
             _notificationTimer.Interval = TimeSpan.FromSeconds(2.5);
             _notificationTimer.Tick += (_, __) =>
             {
@@ -192,6 +165,36 @@ namespace PointCloudViz_Final
                     NotificationPanel.Visibility = Visibility.Collapsed;
                 _notificationTimer.Stop();
             };
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            Logger.Info("MainWindow loaded");
+
+            if (HelixCamera != null && !_cameraInitialized)
+            {
+                System.Windows.Media.CompositionTarget.Rendering += SyncCameraState;
+                _cameraInitialized = true;
+            }
+
+            if (StatusText != null)
+            {
+                DependencyPropertyDescriptor.FromProperty(
+                    System.Windows.Controls.TextBlock.TextProperty,
+                    typeof(System.Windows.Controls.TextBlock))
+                    .AddValueChanged(StatusText, (_, __) =>
+                    {
+                        ShowNotification(StatusText.Text);
+                    });
+            }
+
+            if (_cloud != null)
+            {
+                UpdatePointCloudGPU(_cloud, resetCamera: true);
+                PromptVoxelDownsampleIfLarge();
+            }
+
+            ShowNotification(StatusText.Text);
         }
 
         private void UpdateUndoRedoMenu()
@@ -214,6 +217,34 @@ namespace PointCloudViz_Final
             NotificationPanel.Visibility = Visibility.Visible;
             _notificationTimer.Stop();
             _notificationTimer.Start();
+        }
+
+        private void SetLoadingState(bool isLoading, string message, double? progress = null)
+        {
+            if (LoadingOverlay == null || LoadingText == null || LoadingProgress == null)
+                return;
+
+            LoadingOverlay.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
+            LoadingText.Text = message;
+
+            if (isLoading)
+            {
+                if (progress.HasValue)
+                {
+                    LoadingProgress.IsIndeterminate = false;
+                    LoadingProgress.Value = Math.Clamp(progress.Value, 0, 100);
+                }
+                else
+                {
+                    LoadingProgress.IsIndeterminate = true;
+                    LoadingProgress.Value = 0;
+                }
+            }
+            else
+            {
+                LoadingProgress.IsIndeterminate = false;
+                LoadingProgress.Value = 0;
+            }
         }
 
         private void Undo_Click(object sender, RoutedEventArgs e)
@@ -476,25 +507,31 @@ namespace PointCloudViz_Final
             };
             if (ofd.ShowDialog() == true)
             {
+                var fileNameOnly = Path.GetFileName(ofd.FileName);
                 try
                 {
                     Logger.Info($"开始读取点云文件: {ofd.FileName}");
                     var reader = _readers.FirstOrDefault(r => r.CanRead(System.IO.Path.GetExtension(ofd.FileName)));
-                    if (reader == null) 
-                    { 
+                    if (reader == null)
+                    {
                         MessageBox.Show("不支持的格式");
                         Logger.Warning($"不支持的格式: {System.IO.Path.GetExtension(ofd.FileName)}");
-                        return; 
+                        return;
                     }
                     StatusText.Text = $"读取中：{reader.Name}";
-                    
+                    SetLoadingState(true, $"正在读取：{fileNameOnly}");
+
                     // 如果是流式读取器，显示进度
                     PointCloud cloud;
                     if (reader is IO.StreamingLasReader streamingReader)
                     {
-                        var progress = new Progress<double>(p => 
+                        var progress = new Progress<double>(p =>
                         {
-                            Dispatcher.Invoke(() => StatusText.Text = $"读取中：{reader.Name} - {p:F1}%");
+                            Dispatcher.Invoke(() =>
+                            {
+                                StatusText.Text = $"读取中：{reader.Name} - {p:F1}%";
+                                SetLoadingState(true, $"正在读取：{fileNameOnly}", p);
+                            });
                         });
                         cloud = await streamingReader.ReadAsync(ofd.FileName, CancellationToken.None, progress);
                     }
@@ -517,6 +554,10 @@ namespace PointCloudViz_Final
                 {
                     Logger.Error("读取点云文件失败", ex);
                     MessageBox.Show(ex.Message, "读取失败");
+                }
+                finally
+                {
+                    SetLoadingState(false, string.Empty);
                 }
             }
         }
@@ -564,13 +605,22 @@ namespace PointCloudViz_Final
                     var reader = _readers.FirstOrDefault(r => r.CanRead(System.IO.Path.GetExtension(s.DataFile)));
                     if (reader != null && System.IO.File.Exists(s.DataFile))
                     {
-                        _original = await reader.ReadAsync(s.DataFile, CancellationToken.None);
-                        _cloud = new PointCloud(_original.Points);
-                        ClearMeasurementsAndVisuals();
-                        _vm.PointCount = _cloud.Count;
-                        CurrentFileText.Text = s.DataFile;
-                        BBoxText.Text = _cloud.BBox.ToString();
-                        PointCountText.Text = _cloud.Count.ToString();
+                        var dataFileName = Path.GetFileName(s.DataFile);
+                        SetLoadingState(true, $"正在载入：{dataFileName}");
+                        try
+                        {
+                            _original = await reader.ReadAsync(s.DataFile, CancellationToken.None);
+                            _cloud = new PointCloud(_original.Points);
+                            ClearMeasurementsAndVisuals();
+                            _vm.PointCount = _cloud.Count;
+                            CurrentFileText.Text = s.DataFile;
+                            BBoxText.Text = _cloud.BBox.ToString();
+                            PointCountText.Text = _cloud.Count.ToString();
+                        }
+                        finally
+                        {
+                            SetLoadingState(false, string.Empty);
+                        }
                     }
                 }
                 _colorMap = s.ColorMap == "Intensity" ? new IntensityColorMap() : new HeightColorMap();
@@ -732,51 +782,51 @@ namespace PointCloudViz_Final
 
         private void Help_Click(object sender, RoutedEventArgs e)
         {
-            var helpText = @"Point Cloud Viewer - Help
+            var helpText = @"点云查看器 - 使用说明
 
-[Basics]
-- Left drag: rotate
-- Right drag: pan
-- Wheel/Middle drag: zoom
-- Alt + Left: temp rotate in measure mode
-- WASD move, Q/E up-down
+[基础操作]
+- 鼠标左键拖拽：旋转视角
+- 鼠标右键拖拽：平移视角
+- 滚轮/中键拖拽：缩放
+- Alt + 左键：测量模式下暂时旋转
+- 键盘 WASD：平移，Q/E：上下移动
 
-[File]
-- Open: XYZ / PLY / LAS
-- Save: XYZ
-- Save/Open project: view + file path
+[文件]
+- 打开：XYZ / PLY / LAS
+- 保存：XYZ
+- 保存/打开项目：保存视图与文件路径
 
-[View]
-- Color map: height / intensity
-- Background: black / white / gray
-- Point size: slider 1-8
-- Reset view
+[视图]
+- 色带：高度 / 强度
+- 背景：黑 / 白 / 灰
+- 点大小：1-8 滑块调整
+- 重置视角
 
-[Filter]
-- Z range filter
-- Voxel downsample
-- Radius outlier removal
-- Restore original; undo/redo
+[过滤]
+- Z 高度范围过滤
+- 体素下采样
+- 半径离群点移除
+- 恢复原始；撤销/重做
 
-[Measurement]
-- Distance: left-click 2 points (Alt+Left rotate)
-- Area: left-click 3+ points, auto polygon area
-- Leaving measure mode or loading new cloud clears results
+[测量]
+- 距离：左键选取 2 个点（Alt+左键旋转）
+- 面积：左键选取 3 个及以上点，自动计算多边形面积
+- 退出测量模式或加载新点云会清空结果
 
-[Performance]
-- GPU/CPU render fallback
-- Octree/LOD/tiling
-- Large clouds: voxel downsample first
+[性能]
+- GPU/CPU 渲染自动回退
+- 八叉树/LOD/分块
+- 大型点云：优先进行体素下采样
 
-[Requirements]
+[运行环境]
 - .NET 8.0+
 - Windows 10/11
 
-Log: PointCloudApp.log";
+日志：PointCloudApp.log";
 
             var helpWindow = new Window
             {
-                Title = "Help",
+                Title = "使用说明",
                 Width = 600,
                 Height = 700,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
