@@ -11,6 +11,15 @@ namespace PointCloudViz_Final.IO
     /// <summary>流式LAS读取器：支持进度报告和异步加载（解决加载卡顿）</summary>
     public class StreamingLasReader : IPointReader
     {
+        private int _targetPointCount = 2_000_000;
+
+        /// <summary>目标采样点数，用于计算下采样步长（可根据硬件手动调整）。</summary>
+        public int TargetPointCount
+        {
+            get => _targetPointCount;
+            set => _targetPointCount = Math.Max(1, value);
+        }
+
         public string Name => "LAS (Streaming)";
         public bool CanRead(string ext) => ext.Equals(".las", StringComparison.OrdinalIgnoreCase);
 
@@ -46,10 +55,14 @@ namespace PointCloudViz_Final.IO
 
                 long totalBytes = fs.Length;
                 long readBytes = header.OffsetToPointData;
-                int step = Math.Max(1, (int)Math.Ceiling((double)header.PointCount / 2_000_000));
+                if (header.PointFormat is not (0 or 1 or 2 or 3))
+                    throw new NotSupportedException($"不支持的点格式：{header.PointFormat}（仅支持 0/1/2/3）");
+
+                ulong pointCount = header.PointCount;
+                int step = Math.Max(1, (int)Math.Ceiling(pointCount / (double)_targetPointCount));
 
                 // 流式读取点记录
-                for (long i = 0; i < header.PointCount; i++)
+                for (ulong i = 0; i < pointCount; i++)
                 {
                     if (i % 10000 == 0)
                     {
@@ -149,9 +162,6 @@ namespace PointCloudViz_Final.IO
             byte verMajor = br.ReadByte();
             byte verMinor = br.ReadByte();
 
-            if (verMajor == 1 && verMinor >= 4)
-                throw new NotSupportedException("不支持 LAS 1.4");
-
             br.ReadBytes(32); // System Identifier
             br.ReadBytes(32); // Generating Software
             br.ReadUInt16(); // File Creation Day
@@ -175,9 +185,32 @@ namespace PointCloudViz_Final.IO
 
             br.ReadBytes(48); // Max/Min (跳过)
 
+            ulong extendedPointCount = 0;
+            if (verMajor > 1 || (verMajor == 1 && verMinor >= 4))
+            {
+                // LAS 1.4 增加了扩展字段；至少需要读取扩展点计数以避免溢出
+                br.ReadUInt64(); // Start of Waveform Data Packet Record
+                br.ReadUInt64(); // Start of First Extended VLR
+                br.ReadUInt32(); // Number of Extended VLRs
+                extendedPointCount = br.ReadUInt64();
+
+                // 15 个返回计数（每个8字节）
+                for (int i = 0; i < 15; i++)
+                {
+                    br.ReadUInt64();
+                }
+            }
+
+            // 确保文件指针位于头部末尾
+            if (headerSize > fs.Position)
+            {
+                br.ReadBytes((int)(headerSize - fs.Position));
+            }
+
+            var pointCount = extendedPointCount > 0 ? extendedPointCount : legacyPointCount;
             return new LasHeader
             {
-                PointCount = legacyPointCount,
+                PointCount = pointCount,
                 PointFormat = pointFormat,
                 PointRecordLength = pointRecordLength,
                 OffsetToPointData = offsetToPointData,
@@ -192,7 +225,7 @@ namespace PointCloudViz_Final.IO
 
         private class LasHeader
         {
-            public uint PointCount { get; set; }
+            public ulong PointCount { get; set; }
             public byte PointFormat { get; set; }
             public ushort PointRecordLength { get; set; }
             public uint OffsetToPointData { get; set; }

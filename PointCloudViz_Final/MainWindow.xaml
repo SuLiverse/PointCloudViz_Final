@@ -172,6 +172,46 @@
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
             </Border>
+
+            <!-- 加载遮罩，防止大文件读取时界面空白 -->
+            <Border Grid.ColumnSpan="2"
+                    x:Name="LoadingOverlay"
+                    Background="#99000000"
+                    CornerRadius="6"
+                    Padding="18"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="20">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="1"
+                            Background="#22000000"
+                            CornerRadius="6"
+                            Padding="14"
+                            HorizontalAlignment="Center"
+                            Width="360">
+                        <StackPanel>
+                            <TextBlock x:Name="LoadingText"
+                                       Text="正在处理..."
+                                       Foreground="White"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       TextAlignment="Center"
+                                       Margin="0,0,0,8"/>
+                            <ProgressBar x:Name="LoadingProgress"
+                                         Height="10"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         IsIndeterminate="True"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>
