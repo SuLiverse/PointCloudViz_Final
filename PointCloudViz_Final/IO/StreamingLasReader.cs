@@ -129,7 +129,8 @@ namespace PointCloudViz_Final.IO
 
                     readBytes += header.PointRecordLength;
 
-                    if (i % step != 0) continue; // 下采样
+                   if (i % (ulong)step != 0) continue;    // 下采样
+
 
                     // 还原坐标
                     float x = (float)(ix * header.ScaleX + header.OffsetX);
