@@ -1,0 +1,25 @@
+<Window x:Class="PointCloudViz_Final.SimpleTwoInputDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="输入" Height="200" Width="420" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Name="Label1" Width="160"/>
+            <TextBox Name="Input1" Width="200" Height="28" Margin="10,0,0,0"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,10,0,0">
+            <TextBlock Name="Label2" Width="160"/>
+            <TextBox Name="Input2" Width="200" Height="28" Margin="10,0,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="确定" Width="72" Margin="0,0,8,0" Click="Ok_Click"/>
+            <Button Content="取消" Width="72" Click="Cancel_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
