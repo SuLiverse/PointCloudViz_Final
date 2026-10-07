@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: 测试
+        run: dotnet test PointCloudViz.sln -c Release
+
+      - name: 发布桌面程序（自包含单文件，无需安装 .NET）
+        run: >
+          dotnet publish src/PointCloudViz.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -o dist/PointCloudViz-win-x64
+
+      - name: 发布命令行工具
+        run: |
+          dotnet publish src/PointCloudViz.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist/pcv-win-x64
+          dotnet publish src/PointCloudViz.Cli -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o dist/pcv-linux-x64
+          dotnet publish src/PointCloudViz.Cli -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o dist/pcv-osx-arm64
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          Copy-Item samples dist/PointCloudViz-win-x64/samples -Recurse -Force
+          Get-ChildItem dist -Directory | ForEach-Object {
+            Compress-Archive -Path "$($_.FullName)/*" -DestinationPath "dist/$($_.Name).zip" -Force
+          }
+
+      - name: 创建 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: dist/*.zip

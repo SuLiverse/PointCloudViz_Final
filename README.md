@@ -1,197 +1,160 @@
-# PointCloudViz_Final
+# PointCloudViz
 
-一个基于 C# / WPF / .NET 8 的三维点云可视化桌面程序。项目最初来自面向对象程序设计课程期末作品，目标是实现点云文件读取、三维浏览、颜色映射、基础过滤、交互量测和项目状态保存等功能。
+[![CI](https://github.com/SuLiverse/PointCloudViz_Final/actions/workflows/ci.yml/badge.svg)](https://github.com/SuLiverse/PointCloudViz_Final/actions/workflows/ci.yml)
+![.NET 10](https://img.shields.io/badge/.NET-10%20LTS-512BD4)
+![Platform](https://img.shields.io/badge/桌面端-Windows-0078D4)
+![CLI](https://img.shields.io/badge/命令行-Windows%20%7C%20Linux%20%7C%20macOS-555)
 
-这个仓库也是我的第一个 GitHub 项目。相比只完成课程要求，我在实现过程中重点处理了点云可视化中比较常见的几个问题：大坐标导致的渲染黑屏、较大点云的读取和下采样、相机交互不稳定、测量结果反馈不明显等。
+基于 C# / WPF / .NET 10 的三维点云可视化与量测工具：读取 LAS / PLY / XYZ，按真彩色、高程、强度或分类着色，
+做体素下采样与离群点剔除，并在点云上量测坐标、距离、折线与面积。核心算法是一个与界面无关、带单元测试的类库，
+同时提供可在 Linux / macOS 上运行的命令行工具 `pcv`。
 
-## 项目亮点
+![合成街景（RGB + Eye-Dome Lighting）](docs/images/hero.png)
 
-- **桌面端三维点云浏览**：使用 WPF 和 HelixToolkit.Wpf.SharpDX 构建 3D 视口。
-- **多格式点云读取**：支持 `.xyz` / `.txt` / ASCII `.ply` / `.las` 文件读取。
-- **大坐标处理**：加载点云后基于包围盒中心进行坐标归一化，减少地理坐标或测绘坐标过大导致的显示异常。
-- **点云过滤与下采样**：支持 Z 范围过滤、体素下采样和半径离群点剔除。
-- **交互式测量**：支持两点测距、多点面积测量、测量线段和点位高亮显示。
-- **颜色映射**：支持按高程和按强度着色，方便观察点云结构和属性变化。
-- **视角控制**：实现接近 CloudCompare 风格的鼠标交互，并支持 WASD / QE 键盘移动。
-- **项目保存**：可以将数据文件路径、颜色模式、点大小、背景色等配置保存为 JSON 项目文件。
-- **合成数据生成**：内置街景点云生成工具，可生成 `.ply` 或 `.xyz` 示例数据用于测试。
+> 上图及下方所有图片均由本项目的命令行工具 `pcv render` 离屏渲染生成，数据由 `pcv generate` 合成。
 
-## 截图
+项目起源于面向对象程序设计课程期末作品（v1.0），2.0 版本对架构、正确性和功能做了全面升级，详见 [更新日志](CHANGELOG.md)。
 
-当前仓库暂未整理正式截图。可以运行程序后补充以下画面：
+## 功能
 
-- 主界面与点云渲染视图
-- 高程 / 强度颜色映射对比
-- 测距或测面积结果
-- 体素下采样前后点数变化
+**数据读写**
+- LAS 1.0 – 1.4，点数据格式 0 – 10（含 1.4 扩展点数）；写出 LAS 1.2 / 1.4（分类码 > 31 时自动升级到 1.4）
+- PLY：ASCII、二进制小端 / 大端，读写都支持；XYZ / TXT / CSV：自动识别列布局与分隔符
+- 测绘大坐标（UTM、高斯-克吕格）全程以“双精度原点 + 单精度局部坐标”存储，读写与量测保持毫米级精度
+- 超大文件可设置读取上限；显示点数上限独立于数据本身（随机抽稀，不产生条纹）
 
-建议将截图放在 `docs/images/` 目录，并在这里引用。
+**可视化**
+- DirectX 11 渲染（HelixToolkit），Z 轴朝上的转台式相机：左键旋转、右键平移、朝光标缩放、双击设旋转中心
+- 着色：真彩色 / 高程 / 强度 / ASPRS 分类 / 单色；Viridis、Turbo、地形等色带，自动 2%–98% 分位范围，带图例
+- 分类面板：按类勾选显示/隐藏，显示各类点数与占比；高程直方图
+- 俯视、前视、侧视、轴测等预设视角（带平滑过渡），截图导出 PNG
 
-## 技术栈
+**处理**（全部可撤销 / 重做，耗时操作带进度条并可取消）
+- 高程过滤、分类筛选、随机抽稀
+- 体素下采样（无哈希碰撞的体素编码）
+- 统计离群点剔除 SOR、半径离群点剔除 ROR（基于 KD 树并行计算）
 
-- C#
-- .NET 8
-- WPF
-- HelixToolkit.Wpf.SharpDX 2.25.0
-- SharpDX / DirectX 渲染管线
-- System.Text.Json
+**量测**
+- 坐标拾取；距离（斜距、平距、高差、坡度）；折线长度；多边形面积（空间面积与水平投影面积）
+- 量测结果以标注形式绘制在点云上方，列表管理，可导出 CSV，保存在项目文件中
 
-## 功能概览
+**其它**
+- 项目文件（`.pcvproj`）保存数据路径（相对路径）、显示设置、相机与量测，兼容旧版 JSON 项目
+- 拖放打开、最近文件、命令行参数打开、Windows 11 Fluent 主题（跟随系统深浅色）
+- 合成街景生成器：道路、标线、人行道、建筑立面、行道树、车辆、路灯与噪声点，带分类
 
-### 文件读写
+| 分类着色 / 高程着色（Turbo） |
+| --- |
+| ![分类与高程着色](docs/images/color-modes.png) |
 
-- 读取 `.xyz` 和 `.txt` 文本点云。
-- 读取 ASCII `.ply` 点云。
-- 读取 `.las` 点云，内置基础 LAS 解析和流式读取实现。
-- 导出当前点云为 `.xyz`。
-- 保存 / 打开 `.json` 项目配置。
+| 统计离群点剔除：处理前（品红色为噪声点） / 处理后 |
+| --- |
+| ![SOR 前后对比](docs/images/outlier-removal.png) |
 
-### 可视化
+## 快速开始
 
-- 三维点云渲染。
-- 点大小调节。
-- 黑色、白色、灰色背景切换。
-- 按高程着色。
-- 按强度着色。
-- 重置视角。
-- 动态 LOD 开关。
+### 运行桌面程序
 
-### 过滤与处理
+环境：Windows 10 / 11，支持 DirectX 11 的显卡（集成显卡即可）。
 
-- Z 范围过滤。
-- 体素网格下采样。
-- 半径离群点剔除。
-- 恢复原始点云。
-- 撤销 / 重做部分过滤操作。
+- **下载**：在 [Releases](https://github.com/SuLiverse/PointCloudViz_Final/releases) 下载 `PointCloudViz-win-x64.zip`（自包含，无需安装 .NET），解压后运行 `PointCloudViz.exe`。
+- **从源码运行**：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download)，然后
 
-### 测量工具
+  ```powershell
+  git clone https://github.com/SuLiverse/PointCloudViz_Final.git
+  cd PointCloudViz_Final
+  dotnet run --project src/PointCloudViz.App
+  ```
 
-- 两点距离测量。
-- 三点及以上面积测量。
-- 测量点高亮。
-- 测量线和辅助线显示。
-- 清除测量结果。
+  也可以用 Visual Studio 2026 打开 `PointCloudViz.sln`，将 `PointCloudViz.App` 设为启动项目。
 
-### 交互控制
+启动后点击“打开示例数据”即可看到上图的街景；也可以把 `.las` / `.ply` / `.xyz` 文件直接拖进窗口。按 **F1** 查看全部快捷键。
 
-- 鼠标左键拖拽旋转视角。
-- 鼠标右键拖拽平移视角。
-- 鼠标滚轮缩放。
-- `W` / `A` / `S` / `D` 水平移动视角。
-- `Q` / `E` 上下移动视角。
-- 测量模式下可用 `Alt + 左键` 临时旋转视角。
+### 常用操作
+
+| 操作 | 方式 |
+| --- | --- |
+| 旋转 / 平移 / 缩放 | 左键拖动 / 右键（或中键）拖动 / 滚轮（朝光标缩放） |
+| 设置旋转中心 | 双击点云 |
+| 漫游 | 单击视口后 `W` `A` `S` `D` 水平移动，`Q` `E` 升降，按住 `Shift` 加速 |
+| 视角 | `R` 适应窗口，`1` 俯视、`2` 前视、`3` 左视、`0` 轴测 |
+| 量测 | 工具栏选择“坐标 / 距离 / 折线 / 面积”后单击点云；折线与面积用双击、右键或 `Enter` 结束，`Backspace` 撤回顶点 |
+| 撤销 / 重做 | `Ctrl+Z` / `Ctrl+Y`（滤波与量测都可撤销） |
+| 截图 | `F12` |
+
+### 命令行工具 pcv
+
+`pcv` 只依赖核心库，可在任何平台运行，适合批处理：
+
+```bash
+# 查看信息（LAS 头、范围、密度、分类统计）
+dotnet run --project src/PointCloudViz.Cli -- info samples/street_scene.las
+
+# 格式转换并串联滤波：统计离群点剔除 → 0.1 m 体素下采样
+dotnet run --project src/PointCloudViz.Cli -- convert input.las output.ply --sor 16 --voxel 0.1
+
+# 离屏渲染预览图（无需显卡）
+dotnet run --project src/PointCloudViz.Cli -- render input.las -o preview.png --color Classification --view Top
+
+# 生成合成街景
+dotnet run --project src/PointCloudViz.Cli -- generate street.las --spacing 0.08
+```
 
 ## 项目结构
 
 ```text
-PointCloudViz_Final/
-├── ColorMaps/          # 高程、强度等颜色映射
-├── Filters/            # Z 范围、体素、离群点过滤
-├── IO/                 # XYZ、PLY、LAS 读取与 XYZ 导出
-├── Models/             # 点、点云、包围盒、相机等数据模型
-├── Patterns/           # 命令模式、进度观察者等课程设计相关实现
-├── Rendering/          # GPU / CPU 渲染器与渲染管理
-├── Services/           # 项目文件读写、合成街景点云生成
-├── Tools/              # 测量工具
-├── Utils/              # 日志、缓存、内存池等工具类
-├── ViewModels/         # 主视图模型
-├── App.xaml
-├── MainWindow.xaml
-└── MainWindow.xaml.cs
+PointCloudViz.sln
+├── src/
+│   ├── PointCloudViz.Core/       # 跨平台核心库（net10.0，无 UI 依赖）
+│   │   ├── Data/                 #   PointCloud（双精度原点 + 局部坐标）、包围盒、颜色
+│   │   ├── IO/                   #   LAS / PLY / XYZ 读写与格式注册表
+│   │   ├── Spatial/              #   KD 树
+│   │   ├── Processing/           #   滤波器（体素、SOR、ROR、高程、分类、抽稀）
+│   │   ├── Analysis/             #   统计、直方图、PCA 平面拟合
+│   │   ├── Coloring/             #   色带、分类配色、着色器
+│   │   ├── Measurements/         #   量测几何与 CSV 导出
+│   │   ├── Picking/ Viewing/     #   点拾取、Z 轴朝上的轨道相机
+│   │   ├── Rendering/            #   软件渲染器（EDL）与 PNG 编码
+│   │   ├── History/ Project/     #   撤销/重做、项目文件
+│   │   └── Synthetic/            #   合成街景生成
+│   ├── PointCloudViz.App/        # WPF 桌面程序（MVVM）
+│   └── PointCloudViz.Cli/        # 命令行工具 pcv
+├── tests/PointCloudViz.Core.Tests/   # xUnit 单元测试
+├── samples/                      # 示例数据
+└── docs/                         # 架构说明、图片、开发日志
 ```
 
-## 面向对象设计
+架构与关键设计决策见 [docs/architecture.md](docs/architecture.md)。
 
-这个项目在课程设计要求之外，也尽量使用面向对象方式组织代码：
+## 开发
 
-- **封装**：点云读取、过滤、渲染、测量等逻辑分别放在独立模块中，对外通过清晰的方法调用。
-- **继承与抽象**：渲染器基类、LOD 渲染基类、过滤器接口、读取器接口用于复用公共逻辑。
-- **多态**：不同点云格式读取器通过 `IPointReader` 统一调用，不同过滤器通过 `IPointFilter` 统一应用。
-- **命令模式**：体素下采样等操作使用命令对象组织，便于撤销和重做。
-- **观察者思路**：进度通知和 UI 状态更新通过独立对象或回调传递，降低处理逻辑与界面的耦合。
-
-## 运行环境
-
-推荐环境：
-
-- Windows 10 / Windows 11
-- Visual Studio 2022 或更高版本
-- .NET 8 SDK
-- 支持 DirectX 11 的显卡或集成显卡
-
-项目文件：
-
-```text
-PointCloudViz_Final.sln
+```bash
+dotnet build PointCloudViz.sln            # Windows 上构建全部项目
+dotnet test tests/PointCloudViz.Core.Tests # 任意平台运行单元测试
 ```
 
-依赖包会通过 NuGet 还原：
-
-```xml
-<PackageReference Include="LasSharp" Version="1.1.0" />
-<PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="2.25.0" />
-```
-
-## 构建与运行
-
-使用 Visual Studio：
-
-1. 打开 `PointCloudViz_Final.sln`。
-2. 等待 NuGet 依赖还原完成。
-3. 选择 Debug 或 Release 配置。
-4. 启动 `PointCloudViz_Final` 项目。
-
-使用命令行：
-
-```powershell
-dotnet restore
-dotnet build
-dotnet run --project .\PointCloudViz_Final\PointCloudViz_Final.csproj
-```
-
-> 注意：当前文档是在没有 .NET SDK 的环境中整理的，因此没有在本机重新完成构建验证。项目原始开发环境为 Windows + .NET 8 + WPF。
-
-## 使用说明
-
-1. 启动程序后，选择 `文件 -> 打开点云...`。
-2. 选择 `.xyz`、`.txt`、ASCII `.ply` 或 `.las` 文件。
-3. 使用鼠标旋转、平移、缩放查看点云。
-4. 在 `视图 -> 颜色映射` 中切换高程或强度显示。
-5. 在 `过滤` 菜单中进行 Z 范围过滤、体素下采样或离群点剔除。
-6. 在 `工具 -> 测量工具` 中启用测距或测面积。
-7. 如需保存当前配置，选择 `文件 -> 保存项目(.json)...`。
-
-仓库中包含示例数据：
-
-```text
-sample_final.xyz
-sample_final.ply
-```
-
-也可以使用 `工具 -> 生成合成街景点云...` 生成新的测试数据。
+- 在 Linux / macOS 上也能编译 WPF 项目（`EnableWindowsTargeting` 已开启），但只能在 Windows 上运行。
+- 全部项目开启可空引用与“警告视为错误”，依赖版本集中在 `Directory.Packages.props`。
+- GitHub Actions：Linux 上运行单元测试与 CLI 端到端流程；Windows 上构建、发布，并以 `--smoke-test` 模式实际启动程序加载示例数据、渲染并检查截图；推送 `v*` 标签自动打包发布。
 
 ## 已知限制
 
-- PLY 读取器目前只支持 ASCII PLY，不支持二进制 PLY。
-- 内置基础 LAS 读取器主要面向 LAS 1.0-1.3，LAS 1.4 或扩展字段支持有限。
-- 大规模点云主要通过流式读取、抽稀和体素下采样改善性能，尚未实现完整的分块缓存和渐进式瓦片加载。
-- 项目保存功能目前主要保存数据路径和界面配置，不是完整工程文件格式。
-- 仓库中仍保留了一些课程开发和调试阶段的日志文件，后续可以继续清理。
+- 暂不支持 LAZ 压缩格式（会给出提示），可先用 LAStools / PDAL 解压。
+- 所有点一次性载入内存（每点 20 字节，1000 万点约 200 MB），尚未实现 Potree 式的分层流式加载。
+- 桌面端依赖 HelixToolkit.Wpf.SharpDX 2.x（以 .NET Framework 兼容方式运行）；迁移到 HelixToolkit 3.x 留作后续工作。
 
 ## 后续计划
 
-- 增加正式截图和演示 GIF。
-- 清理 `.vs`、`obj` 等不适合进入仓库的文件，并补充 `.gitignore`。
-- 增加二进制 PLY 和更完整的 LAS 1.4 支持。
-- 增加分块加载、层级 LOD 和缓存机制。
-- 增加测量结果历史列表和导出功能。
-- 增加自动化测试和 GitHub Actions 构建验证。
+- 八叉树分层 LOD 与按需加载，支持亿级点云
+- LAZ 读取、E57 支持
+- 剖面（截面）工具、地面滤波（CSF）与 DEM 生成
+- 多点云叠加与配准（ICP）
 
 ## 项目背景
 
-这是一个面向对象程序设计课程期末项目，也是我第一次把课程作品整理为 GitHub 仓库。项目从简单点云显示开始，逐步加入了格式读取、相机控制、过滤、测量、性能优化和 UI 反馈。
-
-虽然它还不是一个成熟的工业级点云软件，但它完整记录了我从课程作业到可展示作品的开发过程，也体现了我对 C# 桌面开发、三维可视化和面向对象设计的学习与实践。
+这是面向对象程序设计课程的期末项目。v1.0 从简单的点云显示开始，逐步加入了格式读取、相机控制、
+过滤、测量和 UI 反馈，开发过程记录在 [docs/dev-log](docs/dev-log/)。2.0 版本在保留原有功能与面向对象设计思路的基础上，
+重构为“核心库 + 桌面程序 + 命令行”的分层结构，修复了大坐标精度、相机、量测等方面的问题，并补充了自动化测试与持续集成。
 
 ## License
 

@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  core:
+    name: Core 测试与 CLI (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: 还原
+        run: |
+          dotnet restore tests/PointCloudViz.Core.Tests
+          dotnet restore src/PointCloudViz.Cli
+
+      - name: 构建
+        run: |
+          dotnet build tests/PointCloudViz.Core.Tests -c Release --no-restore
+          dotnet build src/PointCloudViz.Cli -c Release --no-restore
+
+      - name: 单元测试
+        run: >
+          dotnet test tests/PointCloudViz.Core.Tests -c Release --no-build
+          --logger "trx;LogFileName=results.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: CLI 端到端
+        run: |
+          pcv="dotnet src/PointCloudViz.Cli/bin/Release/net10.0/pcv.dll"
+          $pcv generate out/street.las --spacing 0.1
+          $pcv info out/street.las
+          $pcv convert out/street.las out/clean.ply --sor 16 --voxel 0.1
+          $pcv render out/clean.ply -o out/preview.png --color Classification
+          $pcv render samples/street_scene.las -o out/sample.png
+          test -s out/preview.png && test -s out/sample.png
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: core-results
+          path: |
+            TestResults/
+            out/*.png
+
+  app:
+    name: 桌面程序构建与冒烟测试 (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: 构建解决方案
+        run: dotnet build PointCloudViz.sln -c Release
+
+      - name: 单元测试
+        run: dotnet test PointCloudViz.sln -c Release --no-build
+
+      - name: 发布
+        run: dotnet publish src/PointCloudViz.App -c Release -r win-x64 --self-contained false -o publish/PointCloudViz
+
+      - name: 冒烟测试（加载示例、渲染并截图）
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path publish/PointCloudViz/PointCloudViz.exe
+          $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test', 'samples/street_scene.las', 'smoke.png' -PassThru -Wait
+          Write-Host "exit code: $($proc.ExitCode)"
+          Get-ChildItem "$env:LOCALAPPDATA/PointCloudViz/logs" -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName }
+          if ($proc.ExitCode -ne 0) { throw "smoke test failed with exit code $($proc.ExitCode)" }
+          if (-not (Test-Path smoke.png)) { throw "screenshot missing" }
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: PointCloudViz-win-x64
+          path: |
+            publish/PointCloudViz/
+            smoke.png

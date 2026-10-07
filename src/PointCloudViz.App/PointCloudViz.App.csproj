@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>PointCloudViz</AssemblyName>
+    <RootNamespace>PointCloudViz.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!--
+      NU1701：HelixToolkit.Wpf.SharpDX 2.x 只提供 net462 程序集，在 .NET 上通过兼容层运行（与旧版一致）。
+      WPF0001：Fluent 主题（ThemeMode）在 .NET 10 中仍标记为实验特性。
+    -->
+    <NoWarn>$(NoWarn);NU1701;WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HelixToolkit.Wpf.SharpDX" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PointCloudViz.Core\PointCloudViz.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <None Include="..\..\samples\*.las;..\..\samples\*.ply;..\..\samples\*.xyz" Link="samples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

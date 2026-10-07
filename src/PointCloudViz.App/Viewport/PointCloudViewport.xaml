@@ -1,0 +1,44 @@
+<UserControl x:Class="PointCloudViz.App.Viewport.PointCloudViewport"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hx="http://helix-toolkit.org/wpf/SharpDX"
+             Focusable="True" FocusVisualStyle="{x:Null}">
+    <hx:Viewport3DX x:Name="View"
+                    BackgroundColor="#1E1F24"
+                    ShowCoordinateSystem="True"
+                    CoordinateSystemLabelForeground="White"
+                    ShowViewCube="False"
+                    ZoomExtentsWhenLoaded="False"
+                    EnableSwapChainRendering="True"
+                    UseDefaultGestures="False"
+                    IsRotationEnabled="False"
+                    IsPanEnabled="False"
+                    IsZoomEnabled="False"
+                    IsMoveEnabled="False"
+                    IsInertiaEnabled="False"
+                    IsChangeFieldOfViewEnabled="False"
+                    EnableMouseButtonHitTest="False"
+                    MSAA="Two"
+                    Focusable="False">
+        <hx:Viewport3DX.Camera>
+            <hx:PerspectiveCamera x:Name="Camera"
+                                  Position="0,-20,10"
+                                  LookDirection="0,20,-10"
+                                  UpDirection="0,0,1"
+                                  FieldOfView="45"
+                                  NearPlaneDistance="0.01"
+                                  FarPlaneDistance="100000"/>
+        </hx:Viewport3DX.Camera>
+
+        <hx:PointGeometryModel3D x:Name="PointModel" Color="White" FixedSize="True" Size="2,2" IsHitTestVisible="False"/>
+
+        <!-- 量测叠加层始终绘制在点云之上 -->
+        <hx:TopMostGroup3D EnableTopMost="True">
+            <hx:LineGeometryModel3D x:Name="MeasureLines" Color="#FFD54F" Thickness="2" Smoothness="2" IsHitTestVisible="False"/>
+            <hx:LineGeometryModel3D x:Name="HighlightLines" Color="#4FC3F7" Thickness="3.5" Smoothness="2" IsHitTestVisible="False"/>
+            <hx:LineGeometryModel3D x:Name="PendingLines" Color="#80DEEA" Thickness="1.5" Smoothness="2" IsHitTestVisible="False"/>
+            <hx:PointGeometryModel3D x:Name="Markers" Color="#FF7043" Size="9,9" FixedSize="True" IsHitTestVisible="False"/>
+            <hx:BillboardTextModel3D x:Name="Labels" FixedSize="True" IsHitTestVisible="False"/>
+        </hx:TopMostGroup3D>
+    </hx:Viewport3DX>
+</UserControl>

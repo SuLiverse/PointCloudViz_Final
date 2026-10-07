@@ -1,0 +1,507 @@
+<Window x:Class="PointCloudViz.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:PointCloudViz.App.ViewModels"
+        xmlns:vp="clr-namespace:PointCloudViz.App.Viewport"
+        xmlns:view="clr-namespace:PointCloudViz.Core.Viewing;assembly=PointCloudViz.Core"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        Title="{Binding Title}" Width="1440" Height="900" MinWidth="960" MinHeight="600"
+        Icon="Assets/app.ico" AllowDrop="True" UseLayoutRounding="True">
+
+    <Window.InputBindings>
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenCommand}"/>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveProjectCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding ExportCloudCommand}"/>
+        <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="F12" Command="{Binding ScreenshotCommand}"/>
+    </Window.InputBindings>
+
+    <DockPanel>
+        <!-- ========== 菜单 ========== -->
+        <Menu DockPanel.Dock="Top" Padding="4,2">
+            <MenuItem Header="文件(_F)">
+                <MenuItem Header="打开点云或项目…" InputGestureText="Ctrl+O" Command="{Binding OpenCommand}"/>
+                <MenuItem Header="最近打开" ItemsSource="{Binding RecentFiles}" IsEnabled="{Binding HasRecentFiles}">
+                    <MenuItem.ItemContainerStyle>
+                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Converter={StaticResource FileName}}"/>
+                            <Setter Property="ToolTip" Value="{Binding}"/>
+                            <Setter Property="Command" Value="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            <Setter Property="CommandParameter" Value="{Binding}"/>
+                        </Style>
+                    </MenuItem.ItemContainerStyle>
+                </MenuItem>
+                <MenuItem Header="打开示例数据" Command="{Binding OpenSampleCommand}"/>
+                <Separator/>
+                <MenuItem Header="导出点云 (LAS / PLY / XYZ)…" InputGestureText="Ctrl+Shift+S" Command="{Binding ExportCloudCommand}"/>
+                <MenuItem Header="导出量测结果 (CSV)…" Command="{Binding ExportMeasurementsCommand}"/>
+                <MenuItem Header="保存截图…" InputGestureText="F12" Command="{Binding ScreenshotCommand}"/>
+                <Separator/>
+                <MenuItem Header="打开项目…" Command="{Binding OpenProjectCommand}"/>
+                <MenuItem Header="保存项目…" InputGestureText="Ctrl+S" Command="{Binding SaveProjectCommand}"/>
+                <Separator/>
+                <MenuItem Header="生成合成街景…" Command="{Binding GenerateStreetCommand}"/>
+                <Separator/>
+                <MenuItem Header="退出" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="编辑(_E)">
+                <MenuItem Header="{Binding UndoText}" InputGestureText="Ctrl+Z" Command="{Binding UndoCommand}"/>
+                <MenuItem Header="{Binding RedoText}" InputGestureText="Ctrl+Y" Command="{Binding RedoCommand}"/>
+                <Separator/>
+                <MenuItem Header="恢复原始数据" Command="{Binding RestoreOriginalCommand}"/>
+            </MenuItem>
+            <MenuItem Header="视图(_V)">
+                <MenuItem Header="适应窗口" InputGestureText="R" Command="{Binding FitViewCommand}"/>
+                <Separator/>
+                <MenuItem Header="俯视" InputGestureText="1" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Top}"/>
+                <MenuItem Header="前视" InputGestureText="2" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Front}"/>
+                <MenuItem Header="左视" InputGestureText="3" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Left}"/>
+                <MenuItem Header="右视" InputGestureText="4" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Right}"/>
+                <MenuItem Header="后视" InputGestureText="5" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Back}"/>
+                <MenuItem Header="仰视" InputGestureText="6" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Bottom}"/>
+                <MenuItem Header="轴测" InputGestureText="0" Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Isometric}"/>
+                <Separator/>
+                <MenuItem Header="显示坐标轴" IsCheckable="True" IsChecked="{Binding ShowAxes}"/>
+            </MenuItem>
+            <MenuItem Header="处理(_P)">
+                <MenuItem Header="高程过滤…" Command="{Binding FilterElevationCommand}"/>
+                <MenuItem Header="体素下采样…" Command="{Binding VoxelDownsampleCommand}"/>
+                <MenuItem Header="随机抽稀…" Command="{Binding SubsampleCommand}"/>
+                <Separator/>
+                <MenuItem Header="统计离群点剔除 (SOR)…" Command="{Binding StatisticalOutlierCommand}"/>
+                <MenuItem Header="半径离群点剔除 (ROR)…" Command="{Binding RadiusOutlierCommand}"/>
+                <Separator/>
+                <MenuItem Header="仅保留勾选的分类" Command="{Binding KeepVisibleClassesCommand}"/>
+            </MenuItem>
+            <MenuItem Header="量测(_M)">
+                <MenuItem Header="浏览" InputGestureText="Esc"
+                          IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Navigate, Mode=OneWay}"
+                          Command="{Binding SetToolCommand}" CommandParameter="{x:Static vm:ToolMode.Navigate}"/>
+                <MenuItem Header="坐标拾取"
+                          IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Point, Mode=OneWay}"
+                          Command="{Binding SetToolCommand}" CommandParameter="{x:Static vm:ToolMode.Point}"/>
+                <MenuItem Header="距离"
+                          IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Distance, Mode=OneWay}"
+                          Command="{Binding SetToolCommand}" CommandParameter="{x:Static vm:ToolMode.Distance}"/>
+                <MenuItem Header="折线"
+                          IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Polyline, Mode=OneWay}"
+                          Command="{Binding SetToolCommand}" CommandParameter="{x:Static vm:ToolMode.Polyline}"/>
+                <MenuItem Header="面积"
+                          IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Area, Mode=OneWay}"
+                          Command="{Binding SetToolCommand}" CommandParameter="{x:Static vm:ToolMode.Area}"/>
+                <Separator/>
+                <MenuItem Header="完成当前量测" InputGestureText="Enter" Command="{Binding FinishMeasurementCommand}"/>
+                <MenuItem Header="清空全部量测" Command="{Binding ClearMeasurementsCommand}"/>
+            </MenuItem>
+            <MenuItem Header="帮助(_H)">
+                <MenuItem Header="快捷键与操作说明" InputGestureText="F1" Click="Shortcuts_Click"/>
+                <MenuItem Header="打开日志文件夹" Click="OpenLogs_Click"/>
+                <Separator/>
+                <MenuItem Header="关于 PointCloudViz" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- ========== 工具栏 ========== -->
+        <ToolBarTray DockPanel.Dock="Top" IsLocked="True">
+            <ToolBar Band="0" ToolBarTray.IsLocked="True">
+                <Button Command="{Binding OpenCommand}" ToolTip="打开 (Ctrl+O)">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE8E5;"/>
+                </Button>
+                <Button Command="{Binding SaveProjectCommand}" ToolTip="保存项目 (Ctrl+S)">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE74E;"/>
+                </Button>
+                <Button Command="{Binding ScreenshotCommand}" ToolTip="截图 (F12)">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE722;"/>
+                </Button>
+                <Separator/>
+                <Button Command="{Binding UndoCommand}" ToolTip="{Binding UndoText}">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE7A7;"/>
+                </Button>
+                <Button Command="{Binding RedoCommand}" ToolTip="{Binding RedoText}">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE7A6;"/>
+                </Button>
+                <Separator/>
+                <Button Command="{Binding FitViewCommand}" ToolTip="适应窗口 (R)">
+                    <TextBlock Style="{StaticResource ToolIcon}" Text="&#xE9A6;"/>
+                </Button>
+                <Button Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Top}" Content="俯视" ToolTip="俯视 (1)"/>
+                <Button Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Front}" Content="前视" ToolTip="前视 (2)"/>
+                <Button Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Left}" Content="侧视" ToolTip="左视 (3)"/>
+                <Button Command="{Binding SetViewCommand}" CommandParameter="{x:Static view:ViewPreset.Isometric}" Content="轴测" ToolTip="轴测 (0)"/>
+                <Separator/>
+                <RadioButton GroupName="Tool" Content="浏览" ToolTip="浏览：左键旋转、右键平移、滚轮缩放、双击设旋转中心 (Esc)"
+                             IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Navigate}"/>
+                <RadioButton GroupName="Tool" Content="坐标" ToolTip="坐标拾取"
+                             IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Point}"/>
+                <RadioButton GroupName="Tool" Content="距离" ToolTip="两点距离：斜距 / 平距 / 高差 / 坡度"
+                             IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Distance}"/>
+                <RadioButton GroupName="Tool" Content="折线" ToolTip="折线长度"
+                             IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Polyline}"/>
+                <RadioButton GroupName="Tool" Content="面积" ToolTip="多边形面积：空间面积 / 水平投影面积"
+                             IsChecked="{Binding ToolMode, Converter={StaticResource EnumEquals}, ConverterParameter=Area}"/>
+            </ToolBar>
+        </ToolBarTray>
+
+        <!-- ========== 状态栏 ========== -->
+        <StatusBar DockPanel.Dock="Bottom" Padding="8,2">
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding HoverText}" FontFamily="Cascadia Mono, Consolas" Margin="0,0,16,0"/>
+                    <TextBlock Text="{Binding FileName}" Opacity="0.7"/>
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="330" MinWidth="260" MaxWidth="560"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ========== 侧栏 ========== -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="12,12,8,12">
+                <StackPanel>
+                    <!-- 数据信息 -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="数据"/>
+                            <TextBlock Text="{Binding FileName, TargetNullValue=尚未打开点云}" FontSize="14" TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding FilePath}" Margin="0,0,0,8"/>
+                            <Grid Visibility="{Binding HasCloud, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                    <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="点数"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Column="1">
+                                    <Run Text="{Binding PointCount, StringFormat={}{0:N0}, Mode=OneWay}"/>
+                                    <Run Text="（显示" Foreground="Gray"/><Run Text="{Binding DisplayedCount, StringFormat={}{0:N0}, Mode=OneWay}" Foreground="Gray"/><Run Text="）" Foreground="Gray"/>
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="1" Text="属性"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="1" Grid.Column="1" Text="{Binding AttributesText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="2" Text="X"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="2" Grid.Column="1" Text="{Binding ExtentXText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="3" Text="Y"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="3" Grid.Column="1" Text="{Binding ExtentYText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="4" Text="Z"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="4" Grid.Column="1" Text="{Binding ExtentZText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="5" Text="尺寸"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="5" Grid.Column="1" Text="{Binding SizeText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="6" Text="密度"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="6" Grid.Column="1" Text="{Binding DensityText}"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Grid.Row="7" Text="局部原点" ToolTip="渲染时减去该原点，避免大坐标导致的精度问题"/>
+                                <TextBlock Style="{StaticResource FieldValue}" Grid.Row="7" Grid.Column="1" Text="{Binding OriginText}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 显示设置 -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="显示"/>
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="着色方式"/>
+                            <ComboBox ItemsSource="{Binding ColorModes}" SelectedValuePath="Mode" DisplayMemberPath="Name"
+                                      SelectedValue="{Binding SelectedColorMode}" Margin="0,0,0,10">
+                                <ComboBox.ItemContainerStyle>
+                                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                        <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
+                                    </Style>
+                                </ComboBox.ItemContainerStyle>
+                            </ComboBox>
+
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="色带"/>
+                            <ComboBox ItemsSource="{Binding Palettes}" SelectedItem="{Binding SelectedPalette}" Margin="0,0,0,10">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="72" Height="12" CornerRadius="3" Margin="0,0,10,0" VerticalAlignment="Center"
+                                                    Background="{Binding Converter={StaticResource PaletteToBrush}}"/>
+                                            <TextBlock Text="{Binding DisplayName}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <CheckBox Grid.ColumnSpan="4" Content="自动范围（2%~98% 分位）" IsChecked="{Binding AutoRange}" Margin="0,0,0,6"/>
+                                <TextBox Grid.Row="1" Text="{Binding RangeMinText, UpdateSourceTrigger=PropertyChanged}" ToolTip="色带下限"/>
+                                <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding RangeMaxText, UpdateSourceTrigger=PropertyChanged}" ToolTip="色带上限"/>
+                                <Button Grid.Row="1" Grid.Column="3" Content="应用" Margin="8,0,0,0" Command="{Binding ApplyRangeCommand}"/>
+                            </Grid>
+
+                            <DockPanel Margin="0,0,0,4">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="点大小"/>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding PointSize, StringFormat={}{0:0} px}" Opacity="0.7"/>
+                                <Rectangle/>
+                            </DockPanel>
+                            <Slider Minimum="1" Maximum="12" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding PointSize}" Margin="0,0,0,10"/>
+
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="背景"/>
+                            <ComboBox ItemsSource="{Binding Backgrounds}" SelectedItem="{Binding SelectedBackground}" Margin="0,0,0,10">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="16" Height="16" CornerRadius="3" BorderBrush="#55888888" BorderThickness="1"
+                                                    Background="{Binding Brush}" Margin="0,0,10,0"/>
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="显示上限" ToolTip="超过该点数时随机抽稀显示，不影响数据本身"/>
+                                    <ComboBox ItemsSource="{Binding DisplayBudgets}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedDisplayBudget}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="读取上限" ToolTip="超大文件读取时按步长抽稀，下次打开文件时生效"/>
+                                    <ComboBox ItemsSource="{Binding LoadLimits}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedLoadLimit}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 高程直方图 -->
+                    <Border Style="{StaticResource Card}" Visibility="{Binding HasCloud, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionHeader}" Text="高程分布"/>
+                            <ItemsControl ItemsSource="{Binding HistogramBars}" Height="64">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="Transparent" ToolTip="{Binding ToolTip}">
+                                            <Rectangle VerticalAlignment="Bottom" Fill="{Binding Fill}" Margin="0.5,0" RadiusX="1" RadiusY="1"
+                                                       Height="{Binding Fraction, Converter={StaticResource FractionToLength}, ConverterParameter=64}"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 分类 -->
+                    <Border Style="{StaticResource Card}" Visibility="{Binding HasClasses, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="全不选" Padding="8,2" Command="{Binding HideAllClassesCommand}"/>
+                                <Button DockPanel.Dock="Right" Content="全选" Padding="8,2" Margin="0,0,6,0" Command="{Binding ShowAllClassesCommand}"/>
+                                <TextBlock Style="{StaticResource SectionHeader}" Text="分类（勾选以显示）"/>
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding Classes}" Margin="0,6,0,6">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,1">
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding CountText}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
+                                            <CheckBox IsChecked="{Binding IsVisible}" VerticalContentAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="12" Height="12" CornerRadius="2" Background="{Binding Swatch}" Margin="0,0,8,0"/>
+                                                    <TextBlock>
+                                                        <Run Text="{Binding Name, Mode=OneWay}"/>
+                                                        <Run Text="{Binding Code, StringFormat=({0}), Mode=OneWay}" Foreground="Gray"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="仅保留勾选的分类（可撤销）" HorizontalAlignment="Stretch" Command="{Binding KeepVisibleClassesCommand}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 量测 -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="清空" Padding="8,2" Command="{Binding ClearMeasurementsCommand}"/>
+                                <Button DockPanel.Dock="Right" Content="导出 CSV" Padding="8,2" Margin="0,0,6,0" Command="{Binding ExportMeasurementsCommand}"/>
+                                <TextBlock Style="{StaticResource SectionHeader}" Text="量测"/>
+                            </DockPanel>
+                            <TextBlock Text="选择工具栏中的 坐标 / 距离 / 折线 / 面积 工具后在点云上单击。" TextWrapping="Wrap" Opacity="0.65" FontSize="12"
+                                       Margin="0,6,0,6"/>
+                            <ListBox ItemsSource="{Binding Measurements}" SelectedItem="{Binding SelectedMeasurement}" MaxHeight="260"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" ToolTip="删除" Padding="6,2" VerticalAlignment="Top"
+                                                    Command="{Binding DataContext.DeleteMeasurementCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                <TextBlock Style="{StaticResource ToolIcon}" FontSize="11" Text="&#xE74D;"/>
+                                            </Button>
+                                            <StackPanel Margin="0,2,8,2">
+                                                <TextBlock FontWeight="SemiBold">
+                                                    <Run Text="{Binding Id, StringFormat=#{0}, Mode=OneWay}"/>
+                                                    <Run Text="{Binding KindName, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12" Opacity="0.8"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 处理历史 -->
+                    <Border Style="{StaticResource Card}" Visibility="{Binding HasCloud, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Padding="8,2" Command="{Binding RedoCommand}" ToolTip="{Binding RedoText}">
+                                    <TextBlock Style="{StaticResource ToolIcon}" FontSize="12" Text="&#xE7A6;"/>
+                                </Button>
+                                <Button DockPanel.Dock="Right" Padding="8,2" Margin="0,0,6,0" Command="{Binding UndoCommand}" ToolTip="{Binding UndoText}">
+                                    <TextBlock Style="{StaticResource ToolIcon}" FontSize="12" Text="&#xE7A7;"/>
+                                </Button>
+                                <TextBlock Style="{StaticResource SectionHeader}" Text="操作历史"/>
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding HistoryItems}" Margin="0,6,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat=· {0}}" Opacity="0.8" Margin="0,1"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="暂无编辑" Opacity="0.5" Margin="0,4,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HistoryItems.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          Background="Transparent" ShowsPreview="False"/>
+
+            <!-- ========== 三维视口与浮层 ========== -->
+            <Grid Grid.Column="2">
+                <vp:PointCloudViewport x:Name="Viewport"/>
+
+                <!-- 空状态：欢迎页 -->
+                <Border Visibility="{Binding HasCloud, Converter={StaticResource InverseBoolToVisibility}}"
+                        Style="{StaticResource Overlay}" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28" MaxWidth="520">
+                    <StackPanel>
+                        <TextBlock Text="PointCloudViz" FontSize="28" FontWeight="SemiBold"/>
+                        <TextBlock Text="三维点云可视化与量测 · LAS / PLY / XYZ" Opacity="0.75" Margin="0,4,0,20"/>
+                        <WrapPanel>
+                            <Button Content="打开点云…" Command="{Binding OpenCommand}" Padding="16,6" Margin="0,0,8,8"/>
+                            <Button Content="打开示例数据" Command="{Binding OpenSampleCommand}" Padding="16,6" Margin="0,0,8,8"/>
+                            <Button Content="生成合成街景…" Command="{Binding GenerateStreetCommand}" Padding="16,6" Margin="0,0,8,8"/>
+                        </WrapPanel>
+                        <TextBlock Text="也可以直接把文件拖放到窗口中。" Opacity="0.6" Margin="0,8,0,0"/>
+                        <StackPanel Visibility="{Binding HasRecentFiles, Converter={StaticResource BoolToVisibility}}" Margin="0,16,0,0">
+                            <TextBlock Text="最近打开" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <ItemsControl ItemsSource="{Binding RecentFiles}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Margin="0,2">
+                                            <Hyperlink Command="{Binding DataContext.OpenRecentCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                       CommandParameter="{Binding}" ToolTip="{Binding}" Foreground="#8AB4F8">
+                                                <Run Text="{Binding Converter={StaticResource FileName}, Mode=OneWay}"/>
+                                            </Hyperlink>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 当前工具提示 -->
+                <Border Style="{StaticResource Overlay}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0"
+                        Visibility="{Binding ToolHint, Converter={StaticResource NotNullToVisibility}}" IsHitTestVisible="False">
+                    <TextBlock Text="{Binding ToolHint}"/>
+                </Border>
+
+                <!-- 色带图例 -->
+                <Border Style="{StaticResource Overlay}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,14"
+                        IsHitTestVisible="False">
+                    <Border.Visibility>
+                        <MultiBinding Converter="{x:Static vm:LegendVisibility.Instance}">
+                            <Binding Path="HasCloud"/>
+                            <Binding Path="ShowGradientLegend"/>
+                        </MultiBinding>
+                    </Border.Visibility>
+                    <StackPanel>
+                        <TextBlock Text="{Binding LegendTitle}" FontSize="11" Opacity="0.8" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="14" Height="140" CornerRadius="3" Background="{Binding LegendBrush}"/>
+                            <Grid Margin="8,0,0,0" Height="140">
+                                <TextBlock Text="{Binding LegendMax}" VerticalAlignment="Top" FontFamily="Cascadia Mono, Consolas" FontSize="11"/>
+                                <TextBlock Text="{Binding LegendMin}" VerticalAlignment="Bottom" FontFamily="Cascadia Mono, Consolas" FontSize="11"/>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 轻提示 -->
+                <Border Style="{StaticResource Overlay}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24"
+                        Visibility="{Binding Toast, Converter={StaticResource NotNullToVisibility}}" IsHitTestVisible="False">
+                    <TextBlock Text="{Binding Toast}" TextWrapping="Wrap" MaxWidth="560"/>
+                </Border>
+
+                <!-- 拖放提示 -->
+                <Border x:Name="DropHint" Visibility="Collapsed" Background="#661E88E5" BorderBrush="#1E88E5" BorderThickness="3"
+                        CornerRadius="10" Margin="12" IsHitTestVisible="False">
+                    <TextBlock Text="松开鼠标以打开文件" FontSize="22" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <!-- 忙碌遮罩 -->
+                <Grid Background="#88000000" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                    <Border Style="{StaticResource Overlay}" HorizontalAlignment="Center" VerticalAlignment="Center" Width="380" Padding="20,16">
+                        <StackPanel>
+                            <TextBlock Text="{Binding BusyMessage}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                            <ProgressBar Height="6" Minimum="0" Maximum="100" Value="{Binding BusyProgress}" IsIndeterminate="{Binding BusyIndeterminate}"/>
+                            <DockPanel Margin="0,12,0,0">
+                                <Button DockPanel.Dock="Right" Content="取消" Command="{Binding CancelBusyCommand}" Padding="16,4"/>
+                                <TextBlock Text="{Binding BusyProgress, StringFormat={}{0:F0}%}" VerticalAlignment="Center" Opacity="0.7"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
