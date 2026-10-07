@@ -170,6 +170,22 @@ public class LasTests
     }
 
     [Fact]
+    public void AutoFormat_UpgradesToLas14WhenClassesExceedFiveBits()
+    {
+        var cloud = new PointCloud([new PointRecord(Vector3.Zero, 0, default, 64), new PointRecord(Vector3.One, 0, default, 2)],
+            Double3.Zero, PointAttributes.Classification);
+        var writer = new LasWriter();
+        Assert.Equal(7, writer.ResolveFormat(cloud));
+        Assert.Equal(2, writer.ResolveFormat(TestData.RandomCloud(10)));
+
+        var ms = new MemoryStream();
+        writer.Write(cloud, ms);
+        ms.Position = 0;
+        var loaded = new LasReader().Read(ms);
+        Assert.Equal(64, loaded[0].Classification);
+    }
+
+    [Fact]
     public void Detects_EightBitColorsStoredInSixteenBitFields()
     {
         var cloud = new PointCloud([new PointRecord(Vector3.Zero, 0, new Rgb24(200, 100, 50)), new PointRecord(Vector3.One)],

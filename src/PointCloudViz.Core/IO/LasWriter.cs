@@ -5,14 +5,27 @@ using PointCloudViz.Core.Data;
 namespace PointCloudViz.Core.IO;
 
 /// <summary>
-/// LAS 写出器。默认写出 LAS 1.2 / 点格式 2（含 RGB），也可选 LAS 1.4 / 点格式 7。
-/// 坐标以 0.001（毫米）比例量化，偏移量取包围盒最小值取整。
+/// LAS 写出器：LAS 1.2 / 点格式 2（含 RGB，兼容性最好）或 LAS 1.4 / 点格式 7。
+/// 默认自动选择——点格式 0~5 的分类字段只有 5 位，若存在大于 31 的分类码则自动升级为 1.4 / 格式 7，
+/// 避免分类被截断。坐标以 0.001（毫米）比例量化，偏移量取包围盒最小值取整。
 /// </summary>
-public sealed class LasWriter(byte pointFormat = 2) : IPointCloudWriter
+public sealed class LasWriter(byte? pointFormat = null) : IPointCloudWriter
 {
-    public byte PointFormat { get; } = pointFormat is 2 or 7
+    /// <summary>指定的点格式；<c>null</c> 表示自动选择。</summary>
+    public byte? PointFormat { get; } = pointFormat is null or 2 or 7
         ? pointFormat
         : throw new ArgumentOutOfRangeException(nameof(pointFormat), "仅支持写出点格式 2 或 7。");
+
+    /// <summary>根据点云内容决定实际使用的点格式。</summary>
+    public byte ResolveFormat(PointCloud cloud)
+    {
+        if (PointFormat is { } f) return f;
+        foreach (ref readonly var p in cloud.Points)
+        {
+            if (p.Classification > 31) return 7;
+        }
+        return 2;
+    }
 
     public string FormatName => "LAS 点云";
 
@@ -20,9 +33,10 @@ public sealed class LasWriter(byte pointFormat = 2) : IPointCloudWriter
 
     public void Write(PointCloud cloud, Stream stream, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
-        bool v14 = PointFormat == 7;
+        byte format = ResolveFormat(cloud);
+        bool v14 = format == 7;
         int headerSize = v14 ? LasHeader.Size14 : LasHeader.Size12;
-        int recordLength = LasHeader.MinRecordLength(PointFormat);
+        int recordLength = LasHeader.MinRecordLength(format);
         var reporter = new ProgressReporter(progress);
 
         var min = cloud.WorldMin;
@@ -52,7 +66,7 @@ public sealed class LasWriter(byte pointFormat = 2) : IPointCloudWriter
         BinaryPrimitives.WriteUInt16LittleEndian(h[94..], (ushort)headerSize);
         BinaryPrimitives.WriteUInt32LittleEndian(h[96..], (uint)headerSize);
         BinaryPrimitives.WriteUInt32LittleEndian(h[100..], 0);
-        h[104] = PointFormat;
+        h[104] = format;
         BinaryPrimitives.WriteUInt16LittleEndian(h[105..], (ushort)recordLength);
         if (!v14)
         {
@@ -77,7 +91,7 @@ public sealed class LasWriter(byte pointFormat = 2) : IPointCloudWriter
         const int batch = 16384;
         var buffer = new byte[recordLength * batch];
         var points = cloud.Points;
-        int colorOffset = LasHeader.ColorOffset(PointFormat);
+        int colorOffset = LasHeader.ColorOffset(format);
         for (int i = 0; i < points.Length;)
         {
             cancellationToken.ThrowIfCancellationRequested();

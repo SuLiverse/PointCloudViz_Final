@@ -109,16 +109,14 @@ public static class SoftwareRenderer
     private static void ApplyEdl(float[] depth, Rgb24[] color, byte[] px, int w, int h, RenderOptions options)
     {
         var logDepth = new float[depth.Length];
-        float maxLog = float.NegativeInfinity;
         for (int i = 0; i < depth.Length; i++)
-        {
             logDepth[i] = float.IsPositiveInfinity(depth[i]) ? float.PositiveInfinity : MathF.Log2(depth[i]);
-            if (!float.IsPositiveInfinity(logDepth[i])) maxLog = MathF.Max(maxLog, logDepth[i]);
-        }
 
         int r = Math.Max(1, options.EdlRadius);
         ReadOnlySpan<(int Dx, int Dy)> dirs = [(r, 0), (-r, 0), (0, r), (0, -r), (r, r), (-r, -r), (r, -r), (-r, r)];
-        float strength = options.EdlStrength * 300f;
+        // 经验系数：100 m 处 1 m 的深度台阶约产生 30% 的明暗变化
+        float strength = options.EdlStrength * 120f;
+        const float SilhouetteResponse = 0.004f;
 
         for (int y = 0; y < h; y++)
         {
@@ -128,16 +126,15 @@ public static class SoftwareRenderer
                 float ld = logDepth[i];
                 if (float.IsPositiveInfinity(ld)) continue;
 
+                // 邻域中比自己更靠近相机的像素越多、越近，该像素越暗（被"遮蔽"）
                 float response = 0;
                 foreach (var (dx, dy) in dirs)
                 {
                     int nx = x + dx, ny = y + dy;
-                    // 屏幕外与背景视为"无限远"，用最大深度代替，从而勾勒出轮廓
                     float nld = (uint)nx < (uint)w && (uint)ny < (uint)h ? logDepth[ny * w + nx] : float.PositiveInfinity;
-                    if (float.IsPositiveInfinity(nld)) nld = maxLog + 1f;
-                    response += MathF.Max(0f, ld - nld) + MathF.Max(0f, (nld - ld) * 0.25f) * (nld > maxLog ? 1f : 0f);
+                    response += float.IsPositiveInfinity(nld) ? SilhouetteResponse : MathF.Max(0f, ld - nld);
                 }
-                float shade = MathF.Exp(-strength * response / dirs.Length * 0.01f);
+                float shade = MathF.Exp(-strength * response / dirs.Length);
                 var c = color[i];
                 px[i * 4] = (byte)(c.R * shade);
                 px[i * 4 + 1] = (byte)(c.G * shade);

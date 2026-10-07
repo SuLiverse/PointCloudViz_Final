@@ -123,15 +123,32 @@ public sealed class OrbitCamera
         Distance *= factor;
     }
 
-    /// <summary>调整相机使包围盒完整可见。</summary>
-    public void Fit(BoundingBox bounds, float aspectRatio = 1.5f)
+    /// <summary>
+    /// 保持当前视角方向，调整目标点与距离，使包围盒的 8 个角点恰好全部落在画面内。
+    /// 比"外接球"方式更紧凑，狭长的街景数据不会只占画面中间一小块。
+    /// </summary>
+    public void Fit(BoundingBox bounds, float aspectRatio = 1.5f, float margin = 1.05f)
     {
         if (bounds.IsEmpty) return;
         Target = bounds.Center;
-        float radius = MathF.Max(bounds.Diagonal * 0.5f, 1e-3f);
-        float halfV = FieldOfView * MathF.PI / 360f;
-        float halfH = MathF.Atan(MathF.Tan(halfV) * MathF.Max(aspectRatio, 0.1f));
-        Distance = radius / MathF.Sin(MathF.Min(halfV, halfH)) * 1.05f;
+        float tanY = MathF.Tan(FieldOfView * MathF.PI / 360f);
+        float tanX = tanY * MathF.Max(aspectRatio, 0.1f);
+        var (f, r, u) = (Forward, Right, Up);
+
+        float required = 1e-3f;
+        for (int i = 0; i < 8; i++)
+        {
+            var corner = new Vector3(
+                (i & 1) == 0 ? bounds.Min.X : bounds.Max.X,
+                (i & 2) == 0 ? bounds.Min.Y : bounds.Max.Y,
+                (i & 4) == 0 ? bounds.Min.Z : bounds.Max.Z) - Target;
+            // 角点视深 = Distance + depth，需要满足 |x| ≤ 视深·tanX、|y| ≤ 视深·tanY
+            float depth = Vector3.Dot(corner, f);
+            required = MathF.Max(required, MathF.Abs(Vector3.Dot(corner, r)) / tanX - depth);
+            required = MathF.Max(required, MathF.Abs(Vector3.Dot(corner, u)) / tanY - depth);
+            required = MathF.Max(required, -depth + bounds.Diagonal * 0.05f);
+        }
+        Distance = required * margin;
     }
 
     public void SetPreset(ViewPreset preset)
