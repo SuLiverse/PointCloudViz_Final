@@ -1,20 +1,22 @@
 using System.Globalization;
 using System.IO;
-using System.Threading.Tasks;
 using PointCloudViz_Final.Models;
 
-namespace PointCloudViz_Final.IO
+namespace PointCloudViz_Final.IO;
+
+public static class XyzWriter
 {
-    public static class XyzWriter
-    {
-        public static async Task WriteAsync(PointCloud cloud, string path)
+    public static Task WriteAsync(PointCloud cloud, string path, CancellationToken token = default)
+        => AtomicFile.WriteAsync(path, async stream =>
         {
-            var ci = CultureInfo.InvariantCulture;
-            using var sw = new StreamWriter(path);
+            using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), 65536, leaveOpen: true);
+            await writer.WriteLineAsync("# X Y Z Intensity R G B");
             foreach (var p in cloud.Points)
             {
-                await sw.WriteLineAsync(string.Format(ci, "{0} {1} {2} {3}", p.X, p.Y, p.Z, p.Intensity));
+                token.ThrowIfCancellationRequested();
+                await writer.WriteLineAsync(string.Create(CultureInfo.InvariantCulture,
+                    $"{p.X:R} {p.Y:R} {p.Z:R} {p.Intensity:R} {p.Color.R} {p.Color.G} {p.Color.B}"));
             }
-        }
-    }
+            await writer.FlushAsync(token);
+        }, token);
 }

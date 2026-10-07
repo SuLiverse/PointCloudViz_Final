@@ -5,7 +5,7 @@ using System.Linq;
 namespace PointCloudViz_Final.Utils
 {
     /// <summary>LRU缓存：按需加载，超限淘汰</summary>
-    public class LruCache<TKey, TValue> where TValue : class
+    public class LruCache<TKey, TValue> where TKey : notnull where TValue : class
     {
         private readonly Dictionary<TKey, CacheItem> _cache = new();
         private readonly int _maxSize;
@@ -21,6 +21,7 @@ namespace PointCloudViz_Final.Utils
 
         public LruCache(int maxSize)
         {
+            if (maxSize < 1) throw new ArgumentOutOfRangeException(nameof(maxSize));
             _maxSize = maxSize;
         }
 

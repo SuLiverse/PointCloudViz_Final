@@ -11,43 +11,50 @@ namespace PointCloudViz_Final.Filters
 
         public RadiusOutlierFilter(float radius, int minNeighbors)
         {
+            if (!float.IsFinite(radius) || radius <= 0)
+                throw new System.ArgumentOutOfRangeException(nameof(radius));
+            if (minNeighbors < 1) throw new System.ArgumentOutOfRangeException(nameof(minNeighbors));
             Radius = radius; MinNeighbors = minNeighbors;
         }
 
-        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox)
+        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox, System.Threading.CancellationToken token = default)
         {
             var pts = new List<PointRecord>(input);
             float cell = Radius;
-            var grid = new Dictionary<(int,int,int), List<int>>();
+            var grid = new Dictionary<(long,long,long), List<int>>();
             for (int i = 0; i < pts.Count; i++)
             {
                 var p = pts[i];
-                int ix = (int)System.Math.Floor((p.X - bbox.MinX)/cell);
-                int iy = (int)System.Math.Floor((p.Y - bbox.MinY)/cell);
-                int iz = (int)System.Math.Floor((p.Z - bbox.MinZ)/cell);
+                token.ThrowIfCancellationRequested();
+                long ix = checked((long)System.Math.Floor(((double)p.X - bbox.MinX)/cell));
+                long iy = checked((long)System.Math.Floor(((double)p.Y - bbox.MinY)/cell));
+                long iz = checked((long)System.Math.Floor(((double)p.Z - bbox.MinZ)/cell));
                 var key = (ix,iy,iz);
                 if (!grid.TryGetValue(key, out var list)) { list = new List<int>(); grid[key]=list; }
                 list.Add(i);
             }
-            float r2 = Radius * Radius;
+            double r2 = (double)Radius * Radius;
             for (int i = 0; i < pts.Count; i++)
             {
                 var p = pts[i];
-                int ix = (int)System.Math.Floor((p.X - bbox.MinX)/cell);
-                int iy = (int)System.Math.Floor((p.Y - bbox.MinY)/cell);
-                int iz = (int)System.Math.Floor((p.Z - bbox.MinZ)/cell);
+                token.ThrowIfCancellationRequested();
+                long ix = checked((long)System.Math.Floor(((double)p.X - bbox.MinX)/cell));
+                long iy = checked((long)System.Math.Floor(((double)p.Y - bbox.MinY)/cell));
+                long iz = checked((long)System.Math.Floor(((double)p.Z - bbox.MinZ)/cell));
                 int cnt = 0;
-                for (int dx = -1; dx <= 1; dx++)
-                for (int dy = -1; dy <= 1; dy++)
-                for (int dz = -1; dz <= 1; dz++)
+                for (int dx = -1; dx <= 1 && cnt < MinNeighbors; dx++)
+                for (int dy = -1; dy <= 1 && cnt < MinNeighbors; dy++)
+                for (int dz = -1; dz <= 1 && cnt < MinNeighbors; dz++)
                 {
                     if (grid.TryGetValue((ix+dx, iy+dy, iz+dz), out var inds))
                     {
                         foreach (var j in inds)
                         {
+                            token.ThrowIfCancellationRequested();
                             if (j == i) continue;
                             var q = pts[j];
-                            var d2 = (p.X-q.X)*(p.X-q.X) + (p.Y-q.Y)*(p.Y-q.Y) + (p.Z-q.Z)*(p.Z-q.Z);
+                            double x = (double)p.X - q.X, y = (double)p.Y - q.Y, z = (double)p.Z - q.Z;
+                            var d2 = x*x + y*y + z*z;
                             if (d2 <= r2) cnt++;
                             if (cnt >= MinNeighbors) break;
                         }

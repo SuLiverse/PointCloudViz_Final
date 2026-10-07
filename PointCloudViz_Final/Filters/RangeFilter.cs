@@ -9,12 +9,20 @@ namespace PointCloudViz_Final.Filters
         public float MaxZ { get; }
         public string Name => $"ZRange[{MinZ},{MaxZ}]";
 
-        public RangeFilter(float minZ, float maxZ) { MinZ = minZ; MaxZ = maxZ; }
+        public RangeFilter(float minZ, float maxZ)
+        {
+            if (!float.IsFinite(minZ) || !float.IsFinite(maxZ) || minZ > maxZ)
+                throw new System.ArgumentException("Z range must be finite and minimum must not exceed maximum.");
+            MinZ = minZ; MaxZ = maxZ;
+        }
 
-        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox)
+        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox, System.Threading.CancellationToken token = default)
         {
             foreach (var p in input)
+            {
+                token.ThrowIfCancellationRequested();
                 if (p.Z >= MinZ && p.Z <= MaxZ) yield return p;
+            }
         }
     }
 }

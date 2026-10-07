@@ -1,62 +1,50 @@
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Media;
 using PointCloudViz_Final.Models;
 
-namespace PointCloudViz_Final.IO
-{
-    public class XyzReader : IPointReader
-    {
-        public string Name => "XYZ Reader";
-        public bool CanRead(string extension) => extension.ToLowerInvariant() == ".xyz" || extension.ToLowerInvariant() == ".txt";
+namespace PointCloudViz_Final.IO;
 
-        public async Task<PointCloud> ReadAsync(string path, CancellationToken token)
+public class XyzReader : IPointReader
+{
+    public string Name => "XYZ / TXT";
+    public bool CanRead(string extension) => extension.Equals(".xyz", StringComparison.OrdinalIgnoreCase)
+        || extension.Equals(".txt", StringComparison.OrdinalIgnoreCase);
+
+    public Task<PointCloud> ReadAsync(string path, CancellationToken token) => Task.Run(() =>
+    {
+        token.ThrowIfCancellationRequested();
+        using var reader = new StreamReader(path);
+        var points = new List<PointRecord>();
+        int lineNumber = 0;
+        while (reader.ReadLine() is { } line)
         {
-            // 优化：先估算文件大小以预分配容量
-            var fileInfo = new FileInfo(path);
-            long estimatedLines = fileInfo.Length / 50; // 粗略估算每行50字节
-            var pts = new List<PointRecord>(capacity: (int)Math.Min(estimatedLines, 2_000_000));
-            
-            var ci = CultureInfo.InvariantCulture;
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 65536);
-            using var sr = new StreamReader(fs, System.Text.Encoding.UTF8, true, 65536);
-            string? line;
-            int lineCount = 0;
-            
-            while ((line = await sr.ReadLineAsync()) != null)
+            token.ThrowIfCancellationRequested();
+            lineNumber++;
+            line = line.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            var fields = line.Split([' ', '\t', ',', ';'], StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length is not (3 or 4 or 6 or 7))
+                throw new InvalidDataException($"Line {lineNumber}: expected XYZ, XYZI, XYZRGB or XYZIRGB.");
+            float Number(int index)
             {
-                if (++lineCount % 10000 == 0) token.ThrowIfCancellationRequested();
-                
-                line = line.Trim();
-                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
-                
-                var sp = line.Split(new[]{' ', ',', '\t', ';'}, System.StringSplitOptions.RemoveEmptyEntries);
-                if (sp.Length < 3) continue;
-                
-                // 使用TryParse避免异常开销
-                if (!float.TryParse(sp[0], NumberStyles.Float, ci, out float x)) continue;
-                if (!float.TryParse(sp[1], NumberStyles.Float, ci, out float y)) continue;
-                if (!float.TryParse(sp[2], NumberStyles.Float, ci, out float z)) continue;
-                
-                float intensity = 0;
-                if (sp.Length >= 4) float.TryParse(sp[3], NumberStyles.Any, ci, out intensity);
-                
-                Color? color = null;
-                if (sp.Length >= 6)
-                {
-                    if (byte.TryParse(sp[^3], NumberStyles.Integer, ci, out byte r) &&
-                        byte.TryParse(sp[^2], NumberStyles.Integer, ci, out byte g) &&
-                        byte.TryParse(sp[^1], NumberStyles.Integer, ci, out byte b))
-                    {
-                        color = Color.FromRgb(r, g, b);
-                    }
-                }
-                pts.Add(new PointRecord(x, y, z, intensity, color));
+                if (!float.TryParse(fields[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                    || !float.IsFinite(value))
+                    throw new InvalidDataException($"Line {lineNumber}: invalid number in column {index + 1}.");
+                return value;
             }
-            return new PointCloud(pts);
+            byte Channel(int index)
+            {
+                if (!byte.TryParse(fields[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+                    throw new InvalidDataException($"Line {lineNumber}: RGB channels must be integers from 0 to 255.");
+                return value;
+            }
+            var intensity = fields.Length is 4 or 7 ? Number(3) : 0;
+            var color = fields.Length >= 6
+                ? Color.FromRgb(Channel(fields.Length - 3), Channel(fields.Length - 2), Channel(fields.Length - 1))
+                : Colors.White;
+            points.Add(new PointRecord(Number(0), Number(1), Number(2), intensity, color));
         }
-    }
+        return new PointCloud(points);
+    }, token);
 }

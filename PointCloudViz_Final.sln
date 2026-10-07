@@ -1,8 +1,12 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PointCloudViz_Final", "PointCloudViz_Final\PointCloudViz_Final.csproj", "{B1C1A0CD-5F8B-4375-9488-AB8C62EDEE11}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PointCloudViz_Final.Tests", "PointCloudViz_Final.Tests\PointCloudViz_Final.Tests.csproj", "{AC5E0E74-C090-4A89-BF95-4D03B7C2C527}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PointCloudViz_Final.Smoke", "PointCloudViz_Final.Smoke\PointCloudViz_Final.Smoke.csproj", "{C96E3D9B-7F64-44F1-AAFF-A928CDD54953}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,6 +18,14 @@ Global
 		{B1C1A0CD-5F8B-4375-9488-AB8C62EDEE11}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B1C1A0CD-5F8B-4375-9488-AB8C62EDEE11}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B1C1A0CD-5F8B-4375-9488-AB8C62EDEE11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AC5E0E74-C090-4A89-BF95-4D03B7C2C527}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC5E0E74-C090-4A89-BF95-4D03B7C2C527}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC5E0E74-C090-4A89-BF95-4D03B7C2C527}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC5E0E74-C090-4A89-BF95-4D03B7C2C527}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C96E3D9B-7F64-44F1-AAFF-A928CDD54953}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C96E3D9B-7F64-44F1-AAFF-A928CDD54953}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C96E3D9B-7F64-44F1-AAFF-A928CDD54953}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C96E3D9B-7F64-44F1-AAFF-A928CDD54953}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
