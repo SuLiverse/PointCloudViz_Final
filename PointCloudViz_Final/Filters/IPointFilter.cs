@@ -5,7 +5,7 @@ namespace PointCloudViz_Final.Filters
 {
     public interface IPointFilter
     {
-        IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox);
+        IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox, System.Threading.CancellationToken token = default);
         string Name { get; }
     }
 }

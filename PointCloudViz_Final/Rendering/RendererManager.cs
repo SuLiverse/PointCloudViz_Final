@@ -46,6 +46,7 @@ namespace PointCloudViz_Final.Rendering
                         return result;
                     }
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception)
                 {
                     // GPU渲染失败，标记为不可用
@@ -68,6 +69,7 @@ namespace PointCloudViz_Final.Rendering
                     return result;
                 }
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception)
             {
                 // GPU渲染失败，回退到CPU

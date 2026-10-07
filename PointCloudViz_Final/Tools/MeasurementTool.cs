@@ -1,318 +1,138 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Windows;
-using System.Windows.Media;
 using PointCloudViz_Final.Models;
 
-namespace PointCloudViz_Final.Tools
+namespace PointCloudViz_Final.Tools;
+
+public class MeasurementTool
 {
-    /// <summary>交互式测量工具：测距、面积量算</summary>
-    public class MeasurementTool
+    private readonly List<Vector3> _selectedPoints = new();
+    private readonly List<Measurement> _measurements = new();
+    private Measurement? _latestArea;
+    private MeasurementMode _mode;
+    private bool _active;
+    public bool IsActive { get => _active; set { _active = value; if (!value) ClearSelection(); } }
+    public MeasurementMode Mode { get => _mode; set { _mode = value; ClearSelection(); } }
+    public IReadOnlyList<Vector3> SelectedPoints => _selectedPoints;
+    public IReadOnlyList<Measurement> Measurements => _measurements;
+
+    public bool OnMouseClick(Point screen, Camera camera, PointCloud? cloud, int width, int height)
     {
-        private readonly List<Vector3> _selectedPoints = new();
-        private readonly List<Measurement> _measurements = new();
-        private bool _isActive = false;
-        private MeasurementMode _mode = MeasurementMode.None;
-        private Measurement? _latestAreaMeasurement;
-
-        public bool IsActive
-        {
-            get => _isActive;
-            set
-            {
-                _isActive = value;
-                if (!value) ClearSelection();
-            }
-        }
-
-        public MeasurementMode Mode
-        {
-            get => _mode;
-            set
-            {
-                _mode = value;
-                ClearSelection();
-            }
-        }
-
-        public IReadOnlyList<Vector3> SelectedPoints => _selectedPoints;
-        public IReadOnlyList<Measurement> Measurements => _measurements;
-
-        /// <summary>处理鼠标点击，选择点</summary>
-        public bool OnMouseClick(Point screenPos, Camera camera, PointCloud? cloud, int width, int height)
-        {
-            if (!_isActive || cloud == null || _mode == MeasurementMode.None) return false;
-
-            // Screen to world (nearest visible point)
-            var worldPoint = ScreenToWorld(screenPos, camera, cloud, width, height);
-            if (!worldPoint.HasValue) return false;
-
-            _selectedPoints.Add(worldPoint.Value);
-
-            if (_mode == MeasurementMode.Distance)
-            {
-                if (_selectedPoints.Count == 2)
-                {
-                    var distance = Vector3.Distance(_selectedPoints[0], _selectedPoints[1]);
-                    var measurement = new Measurement
-                    {
-                        Type = MeasurementType.Distance,
-                        Points = new List<Vector3>(_selectedPoints),
-                        Value = distance,
-                        Label = $"距离: {distance:F2}m"
-                    };
-                    _measurements.Add(measurement);
-                    OnMeasurementCreated?.Invoke(measurement);
-                    _selectedPoints.Clear();
-                }
-            }
-            else if (_mode == MeasurementMode.Area)
-            {
-                if (_selectedPoints.Count >= 3)
-                {
-                    // 先检测共面性
-                    if (!IsNearlyCoplanar(_selectedPoints, out var normal, out var centroid))
-                    {
-                        // 回退最后一次添加，提示
-                        _selectedPoints.RemoveAt(_selectedPoints.Count - 1);
-                        OnMeasurementMessage?.Invoke("选点不共面，无法计算面积（请在同一平面选点）");
-                        return false;
-                    }
-
-                    // 按平面排序，避免交叉；同时投影到局部平面计算面积
-                    var ordered3D = OrderPointsOnPlane(_selectedPoints, normal, centroid);
-                    var area = CalculatePolygonArea2D(ProjectToPlane(ordered3D, normal, centroid));
-                    var measurement = new Measurement
-                    {
-                        Type = MeasurementType.Area,
-                        Points = new List<Vector3>(ordered3D),
-                        Value = area,
-                        Label = $"面积: {area:F2}m²"
-                    };
-
-                    if (_latestAreaMeasurement != null)
-                    {
-                        _measurements.Remove(_latestAreaMeasurement);
-                    }
-
-                    _measurements.Add(measurement);
-                    _latestAreaMeasurement = measurement;
-                    OnMeasurementCreated?.Invoke(measurement);
-                }
-            }
-
-            return true;
-        }
-        private Vector3? ScreenToWorld(Point screenPos, Camera camera, PointCloud cloud, int width, int height)
-        {
-            if (width <= 0 || height <= 0) return null;
-
-            // 将屏幕坐标归一化到[-1, 1]
-            float nx = (float)((screenPos.X / width) * 2.0 - 1.0);
-            float ny = (float)(1.0 - (screenPos.Y / height) * 2.0);
-
-            // 构建视图投影矩阵
-            var view = camera.ViewMatrix;
-            var proj = camera.ProjectionMatrix(width / (float)height);
-            var viewProj = view * proj;
-
-            // 找到屏幕位置附近最近的点
-            if (cloud.Points == null || cloud.Points.Count == 0)
-                return null;
-
-            // 使用可见点（如果有点云分块，使用分块的点）
-            var pointsToSearch = cloud.Points;
-            
-            // 如果点太多，先做粗略筛选（只检查视锥体内的点）
-            if (pointsToSearch.Count > 10000)
-            {
-                var visiblePoints = cloud.GetVisiblePoints(viewProj);
-                if (visiblePoints.Count > 0)
-                {
-                    pointsToSearch = visiblePoints;
-                }
-            }
-
-            if (pointsToSearch.Count == 0)
-                return null;
-
-            // 找到屏幕位置最近的点（扩大搜索范围以提高成功率）
-            var nearPoint = pointsToSearch
-                .Where(p =>
-                {
-                    // 快速视锥体检查
-                    var pos = new Vector4(p.X, p.Y, p.Z, 1f);
-                    var screen = Vector4.Transform(pos, viewProj);
-                    float w = screen.W != 0 ? 1f / screen.W : 1f;
-                    float sx = screen.X * w;
-                    float sy = screen.Y * w;
-                    
-                    // 检查是否在屏幕范围内（放宽边界）
-                    return sx >= -1.1f && sx <= 1.1f && sy >= -1.1f && sy <= 1.1f;
-                })
-                .OrderBy(p =>
-                {
-                    var pos = new Vector4(p.X, p.Y, p.Z, 1f);
-                    var screen = Vector4.Transform(pos, viewProj);
-                    float w = screen.W != 0 ? 1f / screen.W : 1f;
-                    float sx = screen.X * w;
-                    float sy = screen.Y * w;
-                    float dx = sx - nx;
-                    float dy = sy - ny;
-                    return dx * dx + dy * dy;
-                })
-                .FirstOrDefault();
-
-            // 检查是否找到有效点
-            if (nearPoint.X == 0 && nearPoint.Y == 0 && nearPoint.Z == 0)
-            {
-                // 检查是否所有点都是原点
-                if (pointsToSearch.Any(p => p.X != 0 || p.Y != 0 || p.Z != 0))
-                {
-                    return null; // 找到了原点但其他点不是原点，说明没找到合适的点
-                }
-            }
-
-            return new Vector3(nearPoint.X, nearPoint.Y, nearPoint.Z);
-        }
-
-        /// <summary>计算多边形面积（使用叉积）</summary>
-        private float CalculatePolygonArea2D(List<Vector2> points)
-        {
-            if (points.Count < 3) return 0f;
-
-            double area = 0.0;
-            for (int i = 0; i < points.Count; i++)
-            {
-                var p1 = points[i];
-                var p2 = points[(i + 1) % points.Count];
-                area += p1.X * p2.Y - p2.X * p1.Y;
-            }
-            return (float)(Math.Abs(area) * 0.5);
-        }
-
-        /// <summary>将点排序到平面上（按质心角度），避免自交</summary>
-        private List<Vector3> OrderPointsOnPlane(List<Vector3> points, Vector3 normal, Vector3 centroid)
-        {
-            if (points.Count <= 3) return new List<Vector3>(points);
-
-            // 构建平面基
-            Vector3 basisX = Vector3.Normalize(Vector3.Cross(normal, Vector3.UnitY));
-            if (basisX.LengthSquared() < 1e-6f)
-                basisX = Vector3.Normalize(Vector3.Cross(normal, Vector3.UnitX));
-            Vector3 basisY = Vector3.Normalize(Vector3.Cross(normal, basisX));
-
-            // 投影并按极角排序
-            var ordered = points
-                .Select(p =>
-                {
-                    var v = p - centroid;
-                    float x = Vector3.Dot(v, basisX);
-                    float y = Vector3.Dot(v, basisY);
-                    double angle = Math.Atan2(y, x);
-                    return (point: p, angle);
-                })
-                .OrderBy(t => t.angle)
-                .Select(t => t.point)
-                .ToList();
-
-            return ordered;
-        }
-
-        /// <summary>将3D点投影到平面坐标</summary>
-        private List<Vector2> ProjectToPlane(List<Vector3> points, Vector3 normal, Vector3 centroid)
-        {
-            Vector3 basisX = Vector3.Normalize(Vector3.Cross(normal, Vector3.UnitY));
-            if (basisX.LengthSquared() < 1e-6f)
-                basisX = Vector3.Normalize(Vector3.Cross(normal, Vector3.UnitX));
-            Vector3 basisY = Vector3.Normalize(Vector3.Cross(normal, basisX));
-
-            return points.Select(p =>
-            {
-                var v = p - centroid;
-                return new Vector2(Vector3.Dot(v, basisX), Vector3.Dot(v, basisY));
-            }).ToList();
-        }
-
-        /// <summary>判断点集是否近似共面</summary>
-        private bool IsNearlyCoplanar(List<Vector3> points, out Vector3 normal, out Vector3 centroid, float toleranceFactor = 0.001f)
-        {
-            centroid = new Vector3(points.Average(p => p.X), points.Average(p => p.Y), points.Average(p => p.Z));
-
-            // Newell 法求法线
-            normal = Vector3.Zero;
-            for (int i = 0; i < points.Count; i++)
-            {
-                var curr = points[i];
-                var next = points[(i + 1) % points.Count];
-                normal.X += (curr.Y - next.Y) * (curr.Z + next.Z);
-                normal.Y += (curr.Z - next.Z) * (curr.X + next.X);
-                normal.Z += (curr.X - next.X) * (curr.Y + next.Y);
-            }
-            if (normal.LengthSquared() < 1e-8f)
-            {
-                normal = Vector3.UnitZ;
-            }
-            else
-            {
-                normal = Vector3.Normalize(normal);
-            }
-
-            // 计算点到平面的最大距离
-            float maxRange = 0f;
-            foreach (var p in points)
-            {
-                maxRange = Math.Max(maxRange, (p - centroid).Length());
-            }
-            float tolerance = Math.Max(0.001f, maxRange * toleranceFactor);
-
-            foreach (var p in points)
-            {
-                var v = p - centroid;
-                float dist = Math.Abs(Vector3.Dot(v, normal));
-                if (dist > tolerance)
-                    return false;
-            }
-            return true;
-        }
-
-        public void ClearSelection()
-        {
-            _selectedPoints.Clear();
-        }
-
-        public void ClearAll()
-        {
-            _selectedPoints.Clear();
-            _measurements.Clear();
-            _latestAreaMeasurement = null;
-        }
-
-        public event Action<Measurement>? OnMeasurementCreated;
-        public event Action<string>? OnMeasurementMessage;
+        if (cloud == null) return false;
+        var point = PickPoint(screen, cloud.Points, camera.ViewMatrix * camera.ProjectionMatrix(width / (float)height), width, height);
+        return point.HasValue && AddPoint(point.Value);
     }
 
-    /// <summary>测量结果</summary>
-    public class Measurement
+    public static Vector3? PickPoint(Point screen, IReadOnlyList<PointRecord> points, Matrix4x4 viewProjection,
+        double width, double height, Vector3 offset = default, double radius = 12, int step = 1)
     {
-        public MeasurementType Type { get; set; }
-        public List<Vector3> Points { get; set; } = new();
-        public float Value { get; set; }
-        public string Label { get; set; } = "";
+        if (step < 1) throw new ArgumentOutOfRangeException(nameof(step));
+        if (width <= 0 || height <= 0) return null;
+        double bestDistance = radius * radius, bestDepth = double.MaxValue;
+        Vector3? best = null;
+        for (int i = 0; i < points.Count; i += step)
+        {
+            var p = points[i];
+            var clip = Vector4.Transform(new Vector4(p.X - offset.X, p.Y - offset.Y, p.Z - offset.Z, 1), viewProjection);
+            if (clip.W <= 0 || clip.Z < 0 || clip.Z > clip.W) continue;
+            double x = (clip.X / clip.W + 1) * width / 2;
+            double y = (1 - clip.Y / clip.W) * height / 2;
+            double distance = (x - screen.X) * (x - screen.X) + (y - screen.Y) * (y - screen.Y);
+            if (distance < bestDistance || (Math.Abs(distance - bestDistance) < 0.01 && clip.W < bestDepth))
+            {
+                best = new Vector3(p.X, p.Y, p.Z);
+                bestDistance = distance;
+                bestDepth = clip.W;
+            }
+        }
+        return best;
     }
 
-    public enum MeasurementType
+    public bool AddPoint(Vector3 point)
     {
-        Distance,
-        Area
+        if (!IsActive || Mode == MeasurementMode.None) return false;
+        if (_selectedPoints.Contains(point)) return false;
+        _selectedPoints.Add(point);
+        if (Mode == MeasurementMode.Distance && _selectedPoints.Count == 2)
+        {
+            float value = Vector3.Distance(_selectedPoints[0], _selectedPoints[1]);
+            var result = new Measurement { Type = MeasurementType.Distance, Points = new(_selectedPoints),
+                Value = value, Label = $"Distance  {value:F3} u" };
+            _measurements.Add(result);
+            ClearSelection();
+            OnMeasurementCreated?.Invoke(result);
+        }
+        else if (Mode == MeasurementMode.Area && _selectedPoints.Count >= 3)
+        {
+            if (!TryArea(_selectedPoints, out var area))
+            {
+                _selectedPoints.RemoveAt(_selectedPoints.Count - 1);
+                OnMeasurementMessage?.Invoke("选点必须共面、非共线，且多边形边不能交叉。");
+                return false;
+            }
+            if (_latestArea != null) _measurements.Remove(_latestArea);
+            _latestArea = new Measurement { Type = MeasurementType.Area, Points = new(_selectedPoints),
+                Value = area, Label = $"Area  {area:F3} u²" };
+            _measurements.Add(_latestArea);
+            OnMeasurementCreated?.Invoke(_latestArea);
+        }
+        return true;
     }
 
-    public enum MeasurementMode
+    public static bool TryArea(IReadOnlyList<Vector3> points, out float area)
     {
-        None,
-        Distance,
-        Area
+        area = 0;
+        if (points.Count < 3) return false;
+        var origin = points[0];
+        Vector3 normal = Vector3.Zero;
+        for (int i = 1; i < points.Count - 1 && normal.LengthSquared() < 1e-12f; i++)
+            normal = Vector3.Cross(points[i] - origin, points[i + 1] - origin);
+        if (normal.LengthSquared() < 1e-12f) return false;
+        normal = Vector3.Normalize(normal);
+        float extent = points.Max(p => Vector3.Distance(p, origin));
+        if (points.Any(p => Math.Abs(Vector3.Dot(p - origin, normal)) > Math.Max(1e-5f, extent * 0.001f))) return false;
+        var reference = Math.Abs(normal.Z) < 0.9 ? Vector3.UnitZ : Vector3.UnitX;
+        var basisX = Vector3.Normalize(Vector3.Cross(normal, reference));
+        var basisY = Vector3.Cross(normal, basisX);
+        var projected = points.Select(p => new Vector2(Vector3.Dot(p - origin, basisX), Vector3.Dot(p - origin, basisY))).ToArray();
+        double Cross(Vector2 a, Vector2 b, Vector2 c) => ((double)b.X - a.X) * (c.Y - a.Y) - ((double)b.Y - a.Y) * (c.X - a.X);
+        for (int i = 0; i < projected.Length; i++)
+        for (int j = i + 1; j < projected.Length; j++)
+        {
+            int ni = (i + 1) % projected.Length, nj = (j + 1) % projected.Length;
+            if (ni == j || nj == i) continue;
+            var a = projected[i]; var b = projected[ni]; var c = projected[j]; var d = projected[nj];
+            if (Cross(a,b,c) * Cross(a,b,d) <= 0 && Cross(c,d,a) * Cross(c,d,b) <= 0 &&
+                Math.Max(Math.Min(a.X,b.X),Math.Min(c.X,d.X)) <= Math.Min(Math.Max(a.X,b.X),Math.Max(c.X,d.X)) &&
+                Math.Max(Math.Min(a.Y,b.Y),Math.Min(c.Y,d.Y)) <= Math.Min(Math.Max(a.Y,b.Y),Math.Max(c.Y,d.Y))) return false;
+        }
+        double sum = 0;
+        for (int i = 0; i < projected.Length; i++)
+        {
+            var p = projected[i]; var q = projected[(i + 1) % projected.Length];
+            sum += (double)p.X * q.Y - (double)q.X * p.Y;
+        }
+        area = (float)(Math.Abs(sum) / 2);
+        return float.IsFinite(area) && area > 0;
     }
+
+    public void ClearSelection() { _selectedPoints.Clear(); _latestArea = null; }
+    public void ClearAll() { ClearSelection(); _measurements.Clear(); }
+    public void Restore(IEnumerable<Measurement> measurements)
+    {
+        ClearAll();
+        _measurements.AddRange(measurements);
+    }
+    public event Action<Measurement>? OnMeasurementCreated;
+    public event Action<string>? OnMeasurementMessage;
 }
+
+public class Measurement
+{
+    public MeasurementType Type { get; set; }
+    public List<Vector3> Points { get; set; } = new();
+    public float Value { get; set; }
+    public string Label { get; set; } = "";
+}
+public enum MeasurementType { Distance, Area }
+public enum MeasurementMode { None, Distance, Area }

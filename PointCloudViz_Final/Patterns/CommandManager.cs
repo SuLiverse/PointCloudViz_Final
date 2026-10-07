@@ -10,6 +10,7 @@ namespace PointCloudViz_Final.Patterns
         private readonly Stack<ICommand> _undoStack = new();
         private readonly Stack<ICommand> _redoStack = new();
         private const int MaxHistorySize = 50;
+        private const long MaxHistoryBytes = 256L * 1024 * 1024;
 
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
@@ -20,14 +21,19 @@ namespace PointCloudViz_Final.Patterns
             _undoStack.Push(command);
             _redoStack.Clear(); // 执行新命令后清除重做栈
 
-            // 限制历史记录大小
-            if (_undoStack.Count > MaxHistorySize)
+            // Keep at least the latest change undoable; evict oldest snapshots first.
+            if (_undoStack.Count > MaxHistorySize || _undoStack.Sum(c => c.RetainedBytes) > MaxHistoryBytes)
             {
                 var commands = _undoStack.ToList();
-                commands.RemoveAt(0);
+                long retainedBytes = commands.Sum(c => c.RetainedBytes);
+                while (commands.Count > 1 && (commands.Count > MaxHistorySize || retainedBytes > MaxHistoryBytes))
+                {
+                    retainedBytes -= commands[^1].RetainedBytes;
+                    commands.RemoveAt(commands.Count - 1);
+                }
                 _undoStack.Clear();
-                foreach (var cmd in commands)
-                    _undoStack.Push(cmd);
+                for (int i = commands.Count - 1; i >= 0; i--)
+                    _undoStack.Push(commands[i]);
             }
 
             OnCommandExecuted?.Invoke(command);
@@ -37,8 +43,9 @@ namespace PointCloudViz_Final.Patterns
         {
             if (!CanUndo) return;
 
-            var command = _undoStack.Pop();
+            var command = _undoStack.Peek();
             command.Undo();
+            _undoStack.Pop();
             _redoStack.Push(command);
 
             OnCommandUndone?.Invoke(command);
@@ -48,8 +55,9 @@ namespace PointCloudViz_Final.Patterns
         {
             if (!CanRedo) return;
 
-            var command = _redoStack.Pop();
+            var command = _redoStack.Peek();
             command.Execute();
+            _redoStack.Pop();
             _undoStack.Push(command);
 
             OnCommandRedone?.Invoke(command);

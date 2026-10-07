@@ -1,0 +1,37 @@
+name: Windows Build and Test
+
+on:
+  push:
+    branches: [main, 'g/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore locked dependencies
+        run: dotnet restore PointCloudViz_Final.sln --locked-mode
+      - name: Build with warnings as errors
+        run: dotnet build PointCloudViz_Final.sln -c Release --no-restore -warnaserror
+      - name: Run regression tests
+        run: dotnet test PointCloudViz_Final.Tests -c Release --no-build --logger "trx;LogFileName=regression.trx"
+      - name: Publish Windows x64 application
+        run: dotnet publish PointCloudViz_Final -c Release -r win-x64 --self-contained false -o artifacts/publish
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: PointCloudStudio-win-x64
+          path: artifacts/publish/
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: regression-results
+          path: '**/TestResults/*.trx'

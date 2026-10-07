@@ -6,7 +6,9 @@ namespace PointCloudViz_Final.Utils
     /// <summary>日志系统，用于记录程序运行状态和错误</summary>
     public static class Logger
     {
-        private static readonly string LogPath = "PointCloudApp.log";
+        private static readonly string LogPath = Path.Combine(
+            Environment.GetEnvironmentVariable("POINTCLOUD_STUDIO_HOME") ??
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PointCloudStudio"), "app.log");
         private static readonly object LockObject = new object();
 
         public static void Info(string message)
@@ -40,7 +42,9 @@ namespace PointCloudViz_Final.Utils
                 {
                     var logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}";
                     
-                    // 写入文件
+                    Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+                    if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 5 * 1024 * 1024)
+                        File.Move(LogPath, LogPath + ".1", overwrite: true);
                     File.AppendAllText(LogPath, logEntry + "\n");
                     
                     // 同时输出到 Visual Studio 调试窗口

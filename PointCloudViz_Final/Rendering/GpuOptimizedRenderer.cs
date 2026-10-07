@@ -43,17 +43,18 @@ namespace PointCloudViz_Final.Rendering
 
             if (!_gpuAvailable)
             {
-                return null; // 触发CPU回退
+                throw new NotSupportedException("Legacy accelerated renderer is unavailable.");
             }
 
             try
             {
                 return await RenderWithGpuOptimization(cloud, camera, width, height, colorMap, pointSize, background, token, isInteracting);
             }
-            catch (Exception)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
                 _gpuAvailable = false;
-                return null;
+                throw new InvalidOperationException("Legacy accelerated renderer failed.", ex);
             }
         }
 

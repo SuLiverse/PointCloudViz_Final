@@ -8,18 +8,24 @@ namespace PointCloudViz_Final.Filters
     {
         public float VoxelSize { get; }
         public string Name => $"Voxel[{VoxelSize}]";
-        public VoxelGridFilter(float voxelSize) { VoxelSize = voxelSize; }
-
-        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox)
+        public VoxelGridFilter(float voxelSize)
         {
-            var dict = new Dictionary<long, Accum>();
+            if (!float.IsFinite(voxelSize) || voxelSize <= 0)
+                throw new System.ArgumentOutOfRangeException(nameof(voxelSize));
+            VoxelSize = voxelSize;
+        }
+
+        public IEnumerable<PointRecord> Apply(IEnumerable<PointRecord> input, BoundingBox bbox, System.Threading.CancellationToken token = default)
+        {
+            var dict = new Dictionary<(long, long, long), Accum>();
             foreach (var p in input)
             {
-                int ix = (int)System.Math.Floor((p.X - bbox.MinX) / VoxelSize);
-                int iy = (int)System.Math.Floor((p.Y - bbox.MinY) / VoxelSize);
-                int iz = (int)System.Math.Floor((p.Z - bbox.MinZ) / VoxelSize);
+                token.ThrowIfCancellationRequested();
+                long ix = checked((long)System.Math.Floor(((double)p.X - bbox.MinX) / VoxelSize));
+                long iy = checked((long)System.Math.Floor(((double)p.Y - bbox.MinY) / VoxelSize));
+                long iz = checked((long)System.Math.Floor(((double)p.Z - bbox.MinZ) / VoxelSize));
 
-                long key = Hash(ix, iy, iz);
+                var key = (ix, iy, iz);
                 if (!dict.TryGetValue(key, out var acc)) acc = new Accum();
 
                 acc.SumX += p.X;
@@ -36,6 +42,7 @@ namespace PointCloudViz_Final.Filters
 
             foreach (var kv in dict)
             {
+                token.ThrowIfCancellationRequested();
                 var v = kv.Value;
                 if (v.Count == 0) continue;
                 float inv = 1f / v.Count;
@@ -64,16 +71,5 @@ namespace PointCloudViz_Final.Filters
             public int Count;
         }
 
-        private long Hash(int x, int y, int z)
-        {
-            unchecked
-            {
-                long h = 17;
-                h = h * 31 + x;
-                h = h * 31 + y;
-                h = h * 31 + z;
-                return h;
-            }
-        }
     }
 }

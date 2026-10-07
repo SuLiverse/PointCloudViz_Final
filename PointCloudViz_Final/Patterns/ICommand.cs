@@ -6,6 +6,7 @@ namespace PointCloudViz_Final.Patterns
         void Execute();
         void Undo();
         string Description { get; }
+        long RetainedBytes => 0;
     }
 }
 
