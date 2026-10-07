@@ -196,7 +196,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>打开点云或项目文件（菜单、最近文件、拖放、命令行共用）。</summary>
     public async Task<bool> OpenPathAsync(string path)
     {
-        if (Path.GetExtension(path) is ".pcvproj" or ".json")
+        if (Path.GetExtension(path).ToLowerInvariant() is ".pcvproj" or ".json")
             return await OpenProjectPathAsync(path);
 
         if (!File.Exists(path))
@@ -567,13 +567,15 @@ public sealed partial class MainViewModel : ObservableObject
         _cloud = cloud;
         _autoRangeCache.Clear();
         PointCount = cloud.Count;
-        UpdateInfo(cloud);
+        // 统计量是 O(n) 计算，千万级点云放到后台线程，避免界面卡顿
+        var stats = await Task.Run(() => CloudStatistics.Compute(cloud));
+        if (!ReferenceEquals(cloud, _cloud)) return;
+        UpdateInfo(cloud, stats);
         await RefreshDisplayAsync(resetCamera);
     }
 
-    private void UpdateInfo(PointCloud cloud)
+    private void UpdateInfo(PointCloud cloud, CloudStatistics stats)
     {
-        var stats = CloudStatistics.Compute(cloud);
         var ci = CultureInfo.InvariantCulture;
         AttributesText = string.Join(" · ", new[]
         {
@@ -742,15 +744,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void RebuildColorModes(PointCloud? cloud = null)
     {
-        ColorModes.Clear();
-        foreach (var (mode, name) in new[]
-                 {
-                     (ColorMode.Rgb, "真彩色 (RGB)"), (ColorMode.Elevation, "高程"), (ColorMode.Intensity, "强度"),
-                     (ColorMode.Classification, "分类"), (ColorMode.Uniform, "单色"),
-                 })
+        if (ColorModes.Count == 0)
         {
-            ColorModes.Add(new ColorModeOption(mode, name, cloud is null || PointColorizer.IsAvailable(cloud, mode)));
+            ColorModes.Add(new ColorModeOption(ColorMode.Rgb, "真彩色 (RGB)"));
+            ColorModes.Add(new ColorModeOption(ColorMode.Elevation, "高程"));
+            ColorModes.Add(new ColorModeOption(ColorMode.Intensity, "强度"));
+            ColorModes.Add(new ColorModeOption(ColorMode.Classification, "分类"));
+            ColorModes.Add(new ColorModeOption(ColorMode.Uniform, "单色"));
         }
+        foreach (var option in ColorModes)
+            option.IsAvailable = cloud is null || PointColorizer.IsAvailable(cloud, option.Mode);
     }
 
     partial void OnSelectedColorModeChanged(ColorMode value) => _ = SafeAsync(RecolorAsync());

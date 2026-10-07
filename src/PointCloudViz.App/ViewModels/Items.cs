@@ -16,7 +16,15 @@ public enum ToolMode
     Area,
 }
 
-public sealed record ColorModeOption(ColorMode Mode, string Name, bool IsAvailable);
+/// <summary>着色模式选项。选项对象只创建一次，换点云时仅更新可用性，避免下拉框丢失选中项。</summary>
+public sealed partial class ColorModeOption(ColorMode mode, string name) : ObservableObject
+{
+    public ColorMode Mode { get; } = mode;
+    public string Name { get; } = name;
+
+    [ObservableProperty]
+    private bool _isAvailable = true;
+}
 
 public sealed record BackgroundOption(string Name, Rgb24 Color)
 {

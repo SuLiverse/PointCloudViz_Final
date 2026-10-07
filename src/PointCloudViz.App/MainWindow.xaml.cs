@@ -205,7 +205,7 @@ public partial class MainWindow : Window
     private void OnDragEnter(object sender, DragEventArgs e)
     {
         var file = GetDroppedFile(e);
-        bool ok = file is not null && (PointCloudIO.CanRead(file) || Path.GetExtension(file) is ".pcvproj" or ".json");
+        bool ok = file is not null && (PointCloudIO.CanRead(file) || Path.GetExtension(file).ToLowerInvariant() is ".pcvproj" or ".json");
         e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
         DropHint.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
         e.Handled = true;
