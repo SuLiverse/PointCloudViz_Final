@@ -125,7 +125,10 @@ public sealed class OrbitCamera
 
     /// <summary>
     /// 保持当前视角方向，调整目标点与距离，使包围盒的 8 个角点恰好全部落在画面内。
-    /// 比"外接球"方式更紧凑，狭长的街景数据不会只占画面中间一小块。
+    /// <para>
+    /// 透视投影下近大远小，若只把目标点放在包围盒中心，狭长场景（如街道）会偏向画面一侧。
+    /// 这里迭代地把投影范围的中心平移到屏幕中心，再求最小距离，几次即可收敛。
+    /// </para>
     /// </summary>
     public void Fit(BoundingBox bounds, float aspectRatio = 1.5f, float margin = 1.05f)
     {
@@ -133,22 +136,51 @@ public sealed class OrbitCamera
         Target = bounds.Center;
         float tanY = MathF.Tan(FieldOfView * MathF.PI / 360f);
         float tanX = tanY * MathF.Max(aspectRatio, 0.1f);
-        var (f, r, u) = (Forward, Right, Up);
-
-        float required = 1e-3f;
+        Span<Vector3> corners = stackalloc Vector3[8];
         for (int i = 0; i < 8; i++)
         {
-            var corner = new Vector3(
+            corners[i] = new Vector3(
                 (i & 1) == 0 ? bounds.Min.X : bounds.Max.X,
                 (i & 2) == 0 ? bounds.Min.Y : bounds.Max.Y,
-                (i & 4) == 0 ? bounds.Min.Z : bounds.Max.Z) - Target;
+                (i & 4) == 0 ? bounds.Min.Z : bounds.Max.Z);
+        }
+
+        Distance = RequiredDistance(corners, tanX, tanY, bounds.Diagonal) * margin;
+        for (int iteration = 0; iteration < 4; iteration++)
+        {
+            // 投影范围（归一化设备坐标）的中心偏移
+            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+            var (f, r, u, pos) = (Forward, Right, Up, Position);
+            foreach (var c in corners)
+            {
+                var v = c - pos;
+                float z = MathF.Max(Vector3.Dot(v, f), 1e-4f);
+                float x = Vector3.Dot(v, r) / (z * tanX), y = Vector3.Dot(v, u) / (z * tanY);
+                minX = MathF.Min(minX, x); maxX = MathF.Max(maxX, x);
+                minY = MathF.Min(minY, y); maxY = MathF.Max(maxY, y);
+            }
+            float cx = (minX + maxX) * 0.5f, cy = (minY + maxY) * 0.5f;
+            if (MathF.Abs(cx) < 1e-3f && MathF.Abs(cy) < 1e-3f) break;
+            Target += r * (cx * Distance * tanX) + u * (cy * Distance * tanY);
+            Distance = RequiredDistance(corners, tanX, tanY, bounds.Diagonal) * margin;
+        }
+    }
+
+    /// <summary>在当前目标点与朝向下，使所有角点可见所需的最小距离。</summary>
+    private float RequiredDistance(ReadOnlySpan<Vector3> corners, float tanX, float tanY, float diagonal)
+    {
+        var (f, r, u) = (Forward, Right, Up);
+        float required = 1e-3f;
+        foreach (var c in corners)
+        {
+            var corner = c - Target;
             // 角点视深 = Distance + depth，需要满足 |x| ≤ 视深·tanX、|y| ≤ 视深·tanY
             float depth = Vector3.Dot(corner, f);
             required = MathF.Max(required, MathF.Abs(Vector3.Dot(corner, r)) / tanX - depth);
             required = MathF.Max(required, MathF.Abs(Vector3.Dot(corner, u)) / tanY - depth);
-            required = MathF.Max(required, -depth + bounds.Diagonal * 0.05f);
+            required = MathF.Max(required, -depth + diagonal * 0.05f);
         }
-        Distance = required * margin;
+        return required;
     }
 
     public void SetPreset(ViewPreset preset)

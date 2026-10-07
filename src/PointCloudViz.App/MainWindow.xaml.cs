@@ -85,7 +85,11 @@ public partial class MainWindow : Window
             _vm.SetViewCommand.Execute(ViewPreset.Isometric);
             await Task.Delay(TimeSpan.FromSeconds(3)); // 等待相机动画与若干帧渲染完成
             if (!Viewport.SaveScreenshot(smoke.Output)) throw new InvalidOperationException("screenshot failed");
-            Console.WriteLine($"smoke test ok: {_vm.PointCount} points, screenshot {smoke.Output}");
+
+            // 截图不能只有背景色，否则说明点云并未真正渲染出来
+            double coverage = CoveredFraction(smoke.Output);
+            Log.Info($"冒烟测试：{_vm.PointCount} 点，画面覆盖率 {coverage:P1}");
+            if (coverage < 0.02) throw new InvalidOperationException($"rendered image is almost empty ({coverage:P2})");
             Application.Current.Shutdown(0);
         }
         catch (Exception ex)
@@ -94,6 +98,24 @@ public partial class MainWindow : Window
             Console.Error.WriteLine(ex);
             Application.Current.Shutdown(1);
         }
+    }
+
+    /// <summary>与左上角像素（背景）颜色明显不同的像素所占比例。</summary>
+    private static double CoveredFraction(string pngPath)
+    {
+        var frame = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri(pngPath), System.Windows.Media.Imaging.BitmapCreateOptions.None,
+            System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+        var bitmap = new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+        int w = bitmap.PixelWidth, h = bitmap.PixelHeight;
+        var pixels = new byte[w * h * 4];
+        bitmap.CopyPixels(pixels, w * 4, 0);
+        int covered = 0;
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            int diff = Math.Abs(pixels[i] - pixels[0]) + Math.Abs(pixels[i + 1] - pixels[1]) + Math.Abs(pixels[i + 2] - pixels[2]);
+            if (diff > 24) covered++;
+        }
+        return covered / (double)(w * h);
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)

@@ -22,9 +22,9 @@ jobs:
     name: Core 测试与 CLI (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
@@ -55,7 +55,7 @@ jobs:
           $pcv render samples/street_scene.las -o out/sample.png
           test -s out/preview.png && test -s out/sample.png
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: core-results
@@ -67,9 +67,9 @@ jobs:
     name: 桌面程序构建与冒烟测试 (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
@@ -92,7 +92,7 @@ jobs:
           if ($proc.ExitCode -ne 0) { throw "smoke test failed with exit code $($proc.ExitCode)" }
           if (-not (Test-Path smoke.png)) { throw "screenshot missing" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: PointCloudViz-win-x64
